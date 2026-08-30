@@ -19,6 +19,7 @@ import com.aliucord.entities.Plugin
 import com.aliucord.patcher.Hook
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.databinding.WidgetChatListActionsBinding
+import com.discord.models.message.Message
 import com.discord.utilities.textprocessing.node.EditedMessageNode
 import com.discord.utilities.view.text.SimpleDraweeSpanTextView
 import com.discord.widgets.chat.list.WidgetChatList
@@ -30,6 +31,7 @@ import com.lytefast.flexinput.R
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.reflect.Field
+import java.util.WeakHashMap
 import java.util.regex.Pattern
 
 @AliucordPlugin
@@ -38,6 +40,7 @@ class AITranslate : Plugin() {
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
     private var chatList: WidgetChatList? = null
     private val messageLoggerEditedRegex = Pattern.compile("(?:.+ \\(.+: .+\\)\\n)+(.+)\$")
+    private val actionsMessageMap = WeakHashMap<WidgetChatListActions, Message>()
 
     init {
         settingsTab = SettingsTab(PluginSettings::class.java).withArgs(settings)
@@ -129,15 +132,21 @@ class AITranslate : Plugin() {
         val messageContextMenu = WidgetChatListActions::class.java
         val getBinding = messageContextMenu.getDeclaredMethod("getBinding").apply { isAccessible = true }
 
-        patcher.patch(messageContextMenu.getDeclaredMethod("configureUI", WidgetChatListActions.Model::class.java), Hook {
-            val menu = it.thisObject as WidgetChatListActions
-            val binding = getBinding.invoke(menu) as WidgetChatListActionsBinding
-            val translateButton = binding.a.findViewById<TextView>(viewId)
-            translateButton?.setOnClickListener { _ ->
-                val message = (it.args[0] as WidgetChatListActions.Model).message
-                val translationEntry = translatedMessages[message.id]
-
-                if (translationEntry == null) {
+        fun bindButton(button: TextView, menu: WidgetChatListActions, message: Message) {
+            val translationEntry = translatedMessages[message.id]
+            button.text = if (translationEntry == null || translationEntry.showingOriginal) {
+                "AI 翻译此消息"
+            } else {
+                "显示原始消息"
+            }
+            button.setOnClickListener {
+                val currentEntry = translatedMessages[message.id]
+                if (currentEntry == null) {
+                    if (message.content.isNullOrBlank()) {
+                        Utils.showToast("该消息无文本内容可翻译", true)
+                        return@setOnClickListener
+                    }
+                    Utils.showToast("正在请求 AI 翻译...")
                     Utils.threadPool.execute {
                         val response = translateMessage(message.content)
                         if (response !is TranslateSuccessData) {
@@ -156,28 +165,39 @@ class AITranslate : Plugin() {
                         menu.dismiss()
                     }
                 } else {
-                    translationEntry.showingOriginal = !translationEntry.showingOriginal
+                    currentEntry.showingOriginal = !currentEntry.showingOriginal
                     chatList?.rerenderMessage(message.id)
                     menu.dismiss()
                 }
             }
+        }
+
+        patcher.patch(messageContextMenu.getDeclaredMethod("configureUI", WidgetChatListActions.Model::class.java), Hook {
+            val menu = it.thisObject as WidgetChatListActions
+            val model = it.args[0] as WidgetChatListActions.Model
+            val message = model.message ?: return@Hook
+
+            actionsMessageMap[menu] = message
+
+            val binding = getBinding.invoke(menu) as? WidgetChatListActionsBinding ?: return@Hook
+            val translateButton = binding.a.findViewById<TextView>(viewId) ?: return@Hook
+            bindButton(translateButton, menu, message)
         })
 
         patcher.patch(messageContextMenu, "onViewCreated", arrayOf(View::class.java, Bundle::class.java), Hook {
+            val menu = it.thisObject as WidgetChatListActions
             val linearLayout = (it.args[0] as NestedScrollView).getChildAt(0) as LinearLayout
             val context = linearLayout.context
-            val messageId = WidgetChatListActions.`access$getMessageId$p`(it.thisObject as WidgetChatListActions)
-            linearLayout.addView(TextView(context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
-                val translationEntry = translatedMessages[messageId]
 
+            val button = TextView(context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
                 id = viewId
-                text = if (translationEntry == null || translationEntry.showingOriginal) {
-                    "AI 翻译此消息"
-                } else {
-                    "显示原始消息"
-                }
                 setCompoundDrawablesRelativeWithIntrinsicBounds(pluginIcon, null, null, null)
-            })
+            }
+            linearLayout.addView(button)
+
+            actionsMessageMap[menu]?.let { msg ->
+                bindButton(button, menu, msg)
+            }
         })
     }
 
