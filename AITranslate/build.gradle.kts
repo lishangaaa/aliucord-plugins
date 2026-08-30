@@ -8,6 +8,6 @@ aliucord {
 
     changelog.set("""
         # Version 1.0.4
-        * 精简test
+        * 优化精简了一下插件
     """.trimIndent())
 }
