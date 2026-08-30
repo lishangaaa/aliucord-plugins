@@ -1,4 +1,4 @@
-package tech.tyman.plugins.translate
+package com.lishangaaa.plugins.aitranslate
 
 import android.view.View
 import android.widget.TextView
