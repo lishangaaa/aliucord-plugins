@@ -1,4 +1,4 @@
-package com.lishangaaa.plugins.aitranslate
+package tech.tyman.plugins.translate
 
 import android.content.Context
 import android.graphics.drawable.Drawable
@@ -33,7 +33,7 @@ import java.lang.reflect.Field
 import java.util.regex.Pattern
 
 @AliucordPlugin
-class AITranslate : Plugin() {
+class Translate : Plugin() {
     lateinit var pluginIcon: Drawable
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
     private var chatList: WidgetChatList? = null
@@ -52,12 +52,12 @@ class AITranslate : Plugin() {
         patchProcessMessageText()
         commands.registerCommand(
             "translate",
-            "Translates text using Custom AI API",
+            "使用自定义 AI API 翻译文本",
             listOf(
-                Utils.createCommandOption(ApplicationCommandType.STRING, "text", "The text to translate"),
-                Utils.createCommandOption(ApplicationCommandType.STRING, "to", "Target language code (e.g. zh, en, ja)", choices = languageCodeChoices),
-                Utils.createCommandOption(ApplicationCommandType.STRING, "from", "Source language code (default auto)", choices = languageCodeChoices),
-                Utils.createCommandOption(ApplicationCommandType.BOOLEAN, "send", "Whether or not to send the message in chat (default true)")
+                Utils.createCommandOption(ApplicationCommandType.STRING, "text", "需要翻译的内容"),
+                Utils.createCommandOption(ApplicationCommandType.STRING, "to", "目标语言代码 (如 zh, en, ja)", choices = languageCodeChoices),
+                Utils.createCommandOption(ApplicationCommandType.STRING, "from", "源语言代码 (默认 auto)", choices = languageCodeChoices),
+                Utils.createCommandOption(ApplicationCommandType.BOOLEAN, "send", "是否直接发送到聊天中 (默认 true)")
             )
         ) { ctx ->
             val translateData = translateMessage(
@@ -142,13 +142,17 @@ class AITranslate : Plugin() {
                         val response = translateMessage(message.content)
                         if (response !is TranslateSuccessData) {
                             with(response as TranslateErrorData) {
-                                Utils.showToast("$errorText ($errorCode)", true)
+                                Utils.mainThread.post {
+                                    Utils.showToast("$errorText ($errorCode)", true)
+                                }
                                 return@execute
                             }
                         }
                         translatedMessages[message.id] = response
-                        chatList?.rerenderMessage(message.id)
-                        Utils.showToast("已完成 AI 翻译")
+                        Utils.mainThread.post {
+                            chatList?.rerenderMessage(message.id)
+                            Utils.showToast("已完成 AI 翻译")
+                        }
                         menu.dismiss()
                     }
                 } else {
@@ -179,8 +183,17 @@ class AITranslate : Plugin() {
 
     override fun stop(context: Context?) = patcher.unpatchAll()
 
+    private fun formatChatUrl(baseUrl: String): String {
+        val url = baseUrl.trimEnd('/')
+        return when {
+            url.endsWith("/chat/completions") -> url
+            url.endsWith("/v1") -> "$url/chat/completions"
+            else -> "$url/v1/chat/completions"
+        }
+    }
+
     private fun translateMessage(text: String, from: String? = null, to: String? = null): TranslateData {
-        val apiUrl = settings.getString("apiUrl", "https://api.openai.com/v1/chat/completions")
+        val rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1")
         val apiKey = settings.getString("apiKey", "")
         val model = settings.getString("model", "gpt-4o-mini")
         val toLang = to ?: settings.getString("defaultLanguage", "zh")
@@ -194,7 +207,8 @@ class AITranslate : Plugin() {
         }
 
         return try {
-            val systemPrompt = "You are a professional translator. Directly translate the following user message to target language: $toLang. Do not add any preamble, conversational filler, or explanations. Only return the raw translated text."
+            val apiUrl = formatChatUrl(rawUrl)
+            val systemPrompt = "You are a professional translator. Translate the given text directly to target language: $toLang. Output only the pure translated result without explanations or quotes."
 
             val jsonBody = JSONObject().apply {
                 put("model", model)
@@ -210,10 +224,10 @@ class AITranslate : Plugin() {
                 .executeWithBody(jsonBody.toString())
 
             if (!req.ok()) {
-                val errorBody = try { req.text() } catch (e: Exception) { "No response body" }
+                val errorBody = try { req.text() } catch (e: Exception) { "无法读取错误响应" }
                 return TranslateErrorData(
                     errorCode = req.statusCode,
-                    errorText = "API 报错 (${req.statusCode}): $errorBody"
+                    errorText = "API 报错: $errorBody"
                 )
             }
 
@@ -233,7 +247,7 @@ class AITranslate : Plugin() {
         } catch (e: Exception) {
             TranslateErrorData(
                 errorCode = 500,
-                errorText = "翻译异常: ${e.localizedMessage ?: e.message}"
+                errorText = "请求失败: ${e.localizedMessage ?: e.message}"
             )
         }
     }
