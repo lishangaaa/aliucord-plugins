@@ -28,6 +28,7 @@ import com.discord.widgets.chat.list.entries.MessageEntry
 import com.facebook.drawee.span.DraweeSpanStringBuilder
 import com.lytefast.flexinput.R
 import org.json.JSONArray
+import org.json.JSONObject
 import java.lang.reflect.Field
 import java.util.regex.Pattern
 
@@ -50,14 +51,14 @@ class Translate : Plugin() {
         patchMessageContextMenu()
         patchProcessMessageText()
         commands.registerCommand(
-                "translate",
-                "Translates text from one language to another, sends by default",
-                listOf(
-                        Utils.createCommandOption(ApplicationCommandType.STRING, "text", "The text to translate"),
-                        Utils.createCommandOption(ApplicationCommandType.STRING, "to", "The language to translate to (default en, must be a language code described in plugin settings)", choices = languageCodeChoices),
-                        Utils.createCommandOption(ApplicationCommandType.STRING, "from", "The language to translate from (default auto, must be a language code described in plugin settings)", choices = languageCodeChoices),
-                        Utils.createCommandOption(ApplicationCommandType.BOOLEAN, "send", "Whether or not to send the message in chat (default true)")
-                )
+            "translate",
+            "Translates text using Custom AI API",
+            listOf(
+                Utils.createCommandOption(ApplicationCommandType.STRING, "text", "The text to translate"),
+                Utils.createCommandOption(ApplicationCommandType.STRING, "to", "Target language code (e.g. zh, en, ja)", choices = languageCodeChoices),
+                Utils.createCommandOption(ApplicationCommandType.STRING, "from", "Source language code (default auto)", choices = languageCodeChoices),
+                Utils.createCommandOption(ApplicationCommandType.BOOLEAN, "send", "Whether or not to send the message in chat (default true)")
+            )
         ) { ctx ->
             val translateData = translateMessage(
                 ctx.getRequiredString("text"),
@@ -89,11 +90,11 @@ class Translate : Plugin() {
         }
         this.replace(contentStartIndex, contentStartIndex + translateData.sourceText.length, translateData.translatedText)
         val textEnd = this.length
-        this.append(" (translated: ${translateData.sourceLanguage} -> ${translateData.translatedLanguage})")
+        this.append(" (AI 翻译: ${translateData.sourceLanguage} -> ${translateData.translatedLanguage})")
         this.setSpan(RelativeSizeSpan(0.75f), textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         if (textEnd != this.length) {
             this.setSpan(EditedMessageNode.Companion.`access$getForegroundColorSpan`(EditedMessageNode.Companion, context),
-                    textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
@@ -116,7 +117,7 @@ class Translate : Plugin() {
             }
             val textView = it.args[0] as SimpleDraweeSpanTextView
             val builder = mDraweeStringBuilder[textView] as DraweeSpanStringBuilder?
-                    ?: return@Hook
+                ?: return@Hook
             val context = textView.context
             builder.setTranslated(translateData, context)
             textView.setDraweeSpanStringBuilder(builder)
@@ -132,27 +133,25 @@ class Translate : Plugin() {
             val menu = it.thisObject as WidgetChatListActions
             val binding = getBinding.invoke(menu) as WidgetChatListActionsBinding
             val translateButton = binding.a.findViewById<TextView>(viewId)
-            translateButton.setOnClickListener { _ ->
+            translateButton?.setOnClickListener { _ ->
                 val message = (it.args[0] as WidgetChatListActions.Model).message
                 val translationEntry = translatedMessages[message.id]
 
                 if (translationEntry == null) {
-                    // If not translated yet, fetch and cache the translation, then rerender the message
                     Utils.threadPool.execute {
                         val response = translateMessage(message.content)
                         if (response !is TranslateSuccessData) {
-                            with (response as TranslateErrorData) {
+                            with(response as TranslateErrorData) {
                                 Utils.showToast("$errorText ($errorCode)", true)
                                 return@execute
                             }
                         }
                         translatedMessages[message.id] = response
                         chatList?.rerenderMessage(message.id)
-                        Utils.showToast("Translated message")
+                        Utils.showToast("已完成 AI 翻译")
                         menu.dismiss()
                     }
                 } else {
-                    // If translated, then no need to translate anything, so just flip the showingOriginal property and rerender
                     translationEntry.showingOriginal = !translationEntry.showingOriginal
                     chatList?.rerenderMessage(message.id)
                     menu.dismiss()
@@ -169,11 +168,9 @@ class Translate : Plugin() {
 
                 id = viewId
                 text = if (translationEntry == null || translationEntry.showingOriginal) {
-                    // If not translated yet, or original is currently shown
-                    "Translate message"
+                    "AI 翻译此消息"
                 } else {
-                    // Otherwise, it must be translated and original is not currently being shown
-                    "Show original"
+                    "显示原始消息"
                 }
                 setCompoundDrawablesRelativeWithIntrinsicBounds(pluginIcon, null, null, null)
             })
@@ -183,52 +180,61 @@ class Translate : Plugin() {
     override fun stop(context: Context?) = patcher.unpatchAll()
 
     private fun translateMessage(text: String, from: String? = null, to: String? = null): TranslateData {
-        val toLang = to ?: settings.getString("defaultLanguage", "en")
-        val fromLang = from ?: "auto"
-        val queryBuilder = Http.QueryBuilder("https://translate.googleapis.com/translate_a/single").run {
-            append("client", "gtx")
-            append("sl", fromLang)
-            append("tl", toLang)
-            append("dt", "t")
-            append("q", text)
-        }
-        val translatedJsonReq = Http.Request(queryBuilder.toString(), "GET").apply {
-            setHeader("Content-Type", "application/json")
-            setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4592.0 Safari/537.36")
-        }.execute()
+        val apiUrl = settings.getString("apiUrl", "https://api.openai.com/v1/chat/completions")
+        val apiKey = settings.getString("apiKey", "")
+        val model = settings.getString("model", "gpt-4o-mini")
+        val toLang = to ?: settings.getString("defaultLanguage", "zh")
+        val fromLang = from ?: "Auto"
 
-        if (!translatedJsonReq.ok()) {
-            return when (translatedJsonReq.statusCode) {
-                429 -> TranslateErrorData(
-                    errorCode = 429,
-                    errorText = "Translate API ratelimit reached. Please try again later."
-                )
-                else -> TranslateErrorData(
-                    errorCode = translatedJsonReq.statusCode,
-                    errorText = "An unknown error occurred. Please report this to the developer of Translate."
+        if (apiKey.isBlank()) {
+            return TranslateErrorData(
+                errorCode = 401,
+                errorText = "请先在插件设置中填写 API Key"
+            )
+        }
+
+        return try {
+            val systemPrompt = "You are a professional translator. Directly translate the following user message to target language: $toLang. Do not add any preamble, conversational filler, or explanations. Only return the raw translated text."
+
+            val jsonBody = JSONObject().apply {
+                put("model", model)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    put(JSONObject().put("role", "user").put("content", text))
+                })
+            }
+
+            val req = Http.Request(apiUrl, "POST")
+                .setHeader("Authorization", "Bearer $apiKey")
+                .setHeader("Content-Type", "application/json")
+                .executeWithBody(jsonBody.toString())
+
+            if (!req.ok()) {
+                val errorBody = try { req.text() } catch (e: Exception) { "No response body" }
+                return TranslateErrorData(
+                    errorCode = req.statusCode,
+                    errorText = "API 报错 (${req.statusCode}): $errorBody"
                 )
             }
-        }
-        val parsedJson = JSONArray(translatedJsonReq.text())
 
-        val translatedSections = parsedJson.getJSONArray(0)
+            val resJson = JSONObject(req.text())
+            val translatedContent = resJson.getJSONArray("choices")
+                .getJSONObject(0)
+                .getJSONObject("message")
+                .getString("content")
+                .trim()
 
-        val translatedText = buildString {
-            for (i in 0 until translatedSections.length()) {
-                append(translatedSections.getJSONArray(i).getString(0))
-            }
-        }
-
-        return TranslateSuccessData(
-                sourceLanguage = parsedJson.getString(2),
+            TranslateSuccessData(
+                sourceLanguage = fromLang,
                 translatedLanguage = toLang,
                 sourceText = text,
-                translatedText = translatedText
-        )
+                translatedText = translatedContent
+            )
+        } catch (e: Exception) {
+            TranslateErrorData(
+                errorCode = 500,
+                errorText = "翻译异常: ${e.localizedMessage ?: e.message}"
+            )
+        }
     }
-
-//    private fun Message.guildId(): Long? {
-//        val channel = ChannelWrapper(StoreStream.getChannels().getChannel(this.channelId))
-//        return if (channel.isGuild()) channel.guildId else null
-//    }
 }
