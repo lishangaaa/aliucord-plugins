@@ -168,7 +168,7 @@ class AITranslate : Plugin() {
             val current = translatedMessages[message.id]
             if (current == null) {
                 val content = message.content?.toString()
-                if (content.isNullOrBlank()) {
+                if (content.isNullOrEmpty() || content.trim().isEmpty()) {
                     Utils.showToast("该消息无文本内容", true)
                     return@setOnClickListener
                 }
@@ -211,15 +211,16 @@ class AITranslate : Plugin() {
         val rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1")
         val apiKey = settings.getString("apiKey", "")
         val model = settings.getString("model", "gpt-4o-mini")
-        val toLang = if (!to.isNullOrBlank()) to else settings.getString("defaultLanguage", "中文")
-        val fromLang = if (!from.isNullOrBlank()) from else "自动识别"
+        val toLang = if (to != null && to.trim().isNotEmpty()) to else settings.getString("defaultLanguage", "中文")
+        val fromLang = if (from != null && from.trim().isNotEmpty()) from else "自动识别"
 
-        if (apiKey.isBlank()) {
+        if (apiKey.trim().isEmpty()) {
             return TranslateErrorData(401, "请先在插件设置中填写 API Key")
         }
 
         return try {
-            val apiUrl = if (rawUrl.trimEnd('/').endsWith("/v1")) "${rawUrl.trimEnd('/')}/chat/completions" else "${rawUrl.trimEnd('/')}/v1/chat/completions"
+            val trimmedUrl = rawUrl.trimEnd('/')
+            val apiUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/chat/completions" else "$trimmedUrl/v1/chat/completions"
             val body = JSONObject().apply {
                 put("model", model)
                 put("messages", JSONArray().apply {
@@ -239,11 +240,12 @@ class AITranslate : Plugin() {
                 ?: return TranslateErrorData(500, "API 返回数据为空")
 
             val messageObj = choices.optJSONObject(0)?.optJSONObject("message")
-            val content = messageObj?.optString("content", "")?.ifEmpty {
-                messageObj.optString("reasoning_content", "")
-            } ?: ""
+            var content = messageObj?.optString("content", "") ?: ""
+            if (content.isEmpty()) {
+                content = messageObj?.optString("reasoning_content", "") ?: ""
+            }
 
-            if (content.isBlank()) return TranslateErrorData(500, "翻译内容为空")
+            if (content.trim().isEmpty()) return TranslateErrorData(500, "翻译内容为空")
 
             TranslateSuccessData(fromLang, toLang, text, content.trim())
         } catch (e: Exception) {
