@@ -16,46 +16,41 @@ import org.json.JSONObject
 class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
     override fun onViewBound(view: View?) {
         super.onViewBound(view)
-        setActionBarTitle("AI Translate 设置")
+        setActionBarTitle("AI 翻译设置 (AI Translate)")
         val ctx = requireContext()
 
-        // 1. Base URL
-        val urlInput = TextInput(ctx, "Base URL (支持根路径或完整 endpoint)").apply {
+        val urlInput = TextInput(ctx, "API 接口地址 (Base URL)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("apiUrl", "https://api.openai.com/v1"))
         }
 
-        // 2. API Key
-        val keyInput = TextInput(ctx, "API Key (sk-...)").apply {
+        val keyInput = TextInput(ctx, "API Key (密钥)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("apiKey", ""))
         }
 
-        // 3. 模型名称
-        val modelInput = TextInput(ctx, "Model Name (如 gpt-4o-mini, deepseek-chat)").apply {
+        val modelInput = TextInput(ctx, "模型名称 (Model)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("model", "gpt-4o-mini"))
         }
 
-        // 4. 默认目标语言（支持任意自然语言风格描述）
-        val langInput = TextInput(ctx, "默认翻译目标 (如 中文, 英语, 日文, 文言文, 猫娘语气)").apply {
+        val langInput = TextInput(ctx, "翻译目标 (如: 中文, English, 日文, 东北话, 梗体中文)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("defaultLanguage", "中文"))
         }
 
-        // 按钮：获取模型列表
         val fetchModelsButton = Button(ctx).apply {
-            text = "获取模型列表"
+            text = "获取模型列表 (Fetch Models)"
             setOnClickListener {
                 val rawUrl = urlInput.editText.text.toString().trim()
                 val apiKey = keyInput.editText.text.toString().trim()
 
                 if (apiKey.isEmpty()) {
-                    Utils.showToast("请先输入 API Key！", true)
+                    Utils.showToast("请先填写 API Key！", true)
                     return@setOnClickListener
                 }
 
-                Utils.showToast("正在拉取模型列表...")
+                Utils.showToast("正在拉取模型...")
                 Utils.threadPool.execute {
                     try {
                         val modelsUrl = formatModelsUrl(rawUrl)
@@ -65,7 +60,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
 
                         if (!res.ok()) {
                             Utils.mainThread.post {
-                                Utils.showToast("获取失败 (${res.statusCode}): ${res.text()}", true)
+                                Utils.showToast("获取失败 (${res.statusCode})", true)
                             }
                             return@execute
                         }
@@ -80,11 +75,11 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
 
                         Utils.mainThread.post {
                             if (modelNames.isEmpty()) {
-                                Utils.showToast("未拉取到任何模型")
+                                Utils.showToast("未找到可用模型")
                                 return@post
                             }
                             AlertDialog.Builder(ctx)
-                                .setTitle("选择模型 (${modelNames.size} 个)")
+                                .setTitle("选择模型 (共 ${modelNames.size} 个)")
                                 .setItems(modelNames.toTypedArray()) { _, which ->
                                     val selected = modelNames[which]
                                     modelInput.editText.setText(selected)
@@ -94,27 +89,26 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                         }
                     } catch (e: Exception) {
                         Utils.mainThread.post {
-                            Utils.showToast("请求异常: ${e.localizedMessage ?: e.message}", true)
+                            Utils.showToast("请求出错: ${e.localizedMessage ?: e.message}", true)
                         }
                     }
                 }
             }
         }
 
-        // 按钮：测试连接
         val testButton = Button(ctx).apply {
-            text = "测试连接"
+            text = "测试连接 (Test Connection)"
             setOnClickListener {
                 val rawUrl = urlInput.editText.text.toString().trim()
                 val apiKey = keyInput.editText.text.toString().trim()
                 val model = modelInput.editText.text.toString().trim()
 
                 if (apiKey.isEmpty()) {
-                    Utils.showToast("请先输入 API Key！", true)
+                    Utils.showToast("请先填写 API Key！", true)
                     return@setOnClickListener
                 }
 
-                Utils.showToast("正在测试连接...")
+                Utils.showToast("正在测试连通性...")
                 Utils.threadPool.execute {
                     val start = System.currentTimeMillis()
                     val chatUrl = formatChatUrl(rawUrl)
@@ -135,35 +129,34 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                         val cost = System.currentTimeMillis() - start
                         Utils.mainThread.post {
                             if (res.ok()) {
-                                Utils.showToast("连接成功！延迟: ${cost}ms")
+                                Utils.showToast("连接正常！响应耗时: ${cost}ms")
                             } else {
-                                Utils.showToast("连接失败 (${res.statusCode}): ${res.text()}", true)
+                                Utils.showToast("连接失败 (${res.statusCode})", true)
                             }
                         }
                     } catch (e: Exception) {
                         Utils.mainThread.post {
-                            Utils.showToast("连接异常: ${e.localizedMessage ?: e.message}", true)
+                            Utils.showToast("网络连接异常: ${e.localizedMessage ?: e.message}", true)
                         }
                     }
                 }
             }
         }
 
-        // 按钮：保存配置
         val saveButton = Button(ctx).apply {
-            text = "保存配置"
+            text = "保存配置 (Save)"
             setOnClickListener {
                 settings.setString("apiUrl", urlInput.editText.text.toString().trim())
                 settings.setString("apiKey", keyInput.editText.text.toString().trim())
                 settings.setString("model", modelInput.editText.text.toString().trim())
                 settings.setString("defaultLanguage", langInput.editText.text.toString().trim())
-                Utils.showToast("已保存 AI 翻译设置！")
+                Utils.showToast("设置已保存！")
                 close()
             }
         }
 
         val tipText = TextView(ctx).apply {
-            text = "\n使用提示：\n1. 目标语言直接支持自然语言（例如“中文”、“文言文”、“接地气的口语”、“猫娘语气”等）。\n2. 填完 Key 可点击【获取模型列表】快捷选择模型。\n3. 点击【测试连接】可验证 API 与网络连通性。"
+            text = "\n💡 小提示：\n• 支持所有兼容 OpenAI 格式的中转站及 DeepSeek、Claude、通义千问等模型。\n• 翻译目标可自由发挥（例如输入「幽默接地气的口语」、「日文」或「粤语」）。"
             setTextColor(ColorCompat.getThemedColor(ctx, R.b.colorOnPrimary))
         }
 
