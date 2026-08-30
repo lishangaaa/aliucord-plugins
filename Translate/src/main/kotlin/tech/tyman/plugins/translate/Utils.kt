@@ -168,4 +168,4 @@ val languageCodes = mapOf(
     "Zulu" to "zu"
 )
 
-val languageCodeChoices = languageCodes.map {CommandChoice(it.key, it.value)}
+val languageCodeChoices = languageCodes.map { CommandChoice(it.key, it.value) }
