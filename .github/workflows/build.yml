@@ -19,7 +19,6 @@ jobs:
           path: "src"
           fetch-depth: 2
 
-      # 移除了 event_name == 'push' 限制，允许手动触发检出 builds
       - name: Checkout builds
         if: github.ref == 'refs/heads/main'
         uses: actions/checkout@v4
@@ -40,7 +39,7 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          ./gradlew :Translate:make
+          ./gradlew :AITranslate:make
           mkdir -p $GITHUB_WORKSPACE/compiled
           cp $GITHUB_WORKSPACE/src/**/build/*.zip $GITHUB_WORKSPACE/compiled/ || true
 
@@ -50,7 +49,6 @@ jobs:
           name: plugins
           path: compiled
 
-      # 移除了 event_name == 'push' 限制，允许手动触发推送
       - name: Push builds
         if: github.ref == 'refs/heads/main'
         run: |
