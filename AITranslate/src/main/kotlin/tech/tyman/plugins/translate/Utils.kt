@@ -14,44 +14,29 @@ fun refreshAdapterForMessage(messageId: Long) {
             val list = ArrayList<RecyclerView>()
             findRecyclerViews(root, list)
             for (rv in list) {
+                // 如果当前 RecyclerView 正在计算布局，跳过避免崩溃
+                if (rv.isComputingLayout) continue
                 val adapter = rv.adapter ?: continue
-                var updated = false
                 val fields = adapter.javaClass.declaredFields
-                var fIdx = 0
-                while (fIdx < fields.size) {
-                    val field = fields[fIdx]
+                for (field in fields) {
                     field.isAccessible = true
                     val value = field.get(adapter)
                     if (value is List<*>) {
-                        var i = 0
-                        while (i < value.size) {
-                            val item = value[i]
-                            if (item != null) {
-                                val itemFields = item.javaClass.declaredFields
-                                var mIdx = 0
-                                while (mIdx < itemFields.size) {
-                                    val itemField = itemFields[mIdx]
-                                    if (Message::class.java.isAssignableFrom(itemField.type) || itemField.name.equals("message", ignoreCase = true)) {
-                                        itemField.isAccessible = true
-                                        val msg = itemField.get(item) as? Message
-                                        if (msg?.id == messageId) {
-                                            adapter.notifyItemChanged(i)
-                                            updated = true
-                                            break
-                                        }
+                        for (i in value.indices) {
+                            val item = value[i] ?: continue
+                            val itemFields = item.javaClass.declaredFields
+                            for (itemField in itemFields) {
+                                if (Message::class.java.isAssignableFrom(itemField.type) || itemField.name.equals("message", ignoreCase = true)) {
+                                    itemField.isAccessible = true
+                                    val msg = itemField.get(item) as? Message
+                                    if (msg?.id == messageId) {
+                                        adapter.notifyItemChanged(i)
+                                        return@post // 命中并更新后直接退出，避免额外遍历
                                     }
-                                    mIdx++
                                 }
                             }
-                            if (updated) break
-                            i++
                         }
                     }
-                    if (updated) break
-                    fIdx++
-                }
-                if (!updated) {
-                    adapter.notifyDataSetChanged()
                 }
             }
         } catch (_: Throwable) {}
