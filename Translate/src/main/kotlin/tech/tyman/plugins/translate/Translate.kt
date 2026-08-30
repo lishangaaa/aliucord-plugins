@@ -22,7 +22,6 @@ import com.discord.databinding.WidgetChatListActionsBinding
 import com.discord.models.message.Message
 import com.discord.utilities.color.ColorCompat
 import com.discord.utilities.view.text.SimpleDraweeSpanTextView
-import com.discord.widgets.chat.list.WidgetChatList
 import com.discord.widgets.chat.list.actions.WidgetChatListActions
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.entries.MessageEntry
@@ -38,12 +37,11 @@ import java.util.regex.Pattern
 class AITranslate : Plugin() {
     lateinit var pluginIcon: Drawable
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
-    private var chatList: WidgetChatList? = null
     private val messageLoggerEditedRegex = Pattern.compile("(?:.+ \\(.+: .+\\)\\n)+(.+)\$")
     private val actionsMessageMap = WeakHashMap<WidgetChatListActions, Message>()
+    private var draweeField: Field? = null
 
     companion object {
-        // 原生循环检查，杜绝 Kotlin 迭代器类冲突
         fun isBlankSafe(str: CharSequence?): Boolean {
             if (str == null) return true
             val len = str.length
@@ -55,7 +53,6 @@ class AITranslate : Plugin() {
             return true
         }
 
-        // 原生安全裁剪空白字符
         fun trimSafe(str: String?): String {
             if (str == null) return ""
             var start = 0
@@ -115,15 +112,30 @@ class AITranslate : Plugin() {
         } catch (_: Throwable) {}
     }
 
+    private fun findDraweeField(): Field? {
+        if (draweeField != null) return draweeField
+        var clazz: Class<*>? = SimpleDraweeSpanTextView::class.java
+        while (clazz != null && clazz != Any::class.java) {
+            try {
+                val f = clazz.getDeclaredField("mDraweeStringBuilder")
+                f.isAccessible = true
+                draweeField = f
+                return f
+            } catch (_: NoSuchFieldException) {
+                clazz = clazz.superclass
+            }
+        }
+        return null
+    }
+
     private fun DraweeSpanStringBuilder.setTranslated(translateData: TranslateSuccessData, context: Context) {
         try {
             val contentStartIndex = messageLoggerEditedRegex.matcher(this.toString()).let {
                 if (it.find()) it.start(1) else 0
             }
-            val targetEnd = Math.min(contentStartIndex + translateData.sourceText.length, this.length)
-
-            if (contentStartIndex in 0..this.length && targetEnd >= contentStartIndex) {
-                this.replace(contentStartIndex, targetEnd, translateData.translatedText)
+            if (contentStartIndex > 0 && contentStartIndex < this.length) {
+                this.delete(contentStartIndex, this.length)
+                this.append(translateData.translatedText)
             } else {
                 this.clear()
                 this.append(translateData.translatedText)
@@ -147,13 +159,7 @@ class AITranslate : Plugin() {
 
     private fun patchProcessMessageText() {
         try {
-            patcher.patch(WidgetChatList::class.java.getDeclaredConstructor(), Hook {
-                chatList = it.thisObject as? WidgetChatList
-            })
-
-            val mDraweeStringBuilder: Field = SimpleDraweeSpanTextView::class.java.getDeclaredField("mDraweeStringBuilder").apply {
-                isAccessible = true
-            }
+            findDraweeField()
 
             patcher.patch(WidgetChatListAdapterItemMessage::class.java, "processMessageText", arrayOf(SimpleDraweeSpanTextView::class.java, MessageEntry::class.java), Hook {
                 try {
@@ -162,12 +168,10 @@ class AITranslate : Plugin() {
                     val id = message.id
                     val translateData = translatedMessages[id] ?: return@Hook
                     if (translateData.showingOriginal) return@Hook
-                    if (translateData.sourceText != message.content) {
-                        translatedMessages.remove(id)
-                        return@Hook
-                    }
+
                     val textView = it.args[0] as? SimpleDraweeSpanTextView ?: return@Hook
-                    val builder = mDraweeStringBuilder[textView] as? DraweeSpanStringBuilder ?: return@Hook
+                    val field = findDraweeField() ?: return@Hook
+                    val builder = field.get(textView) as? DraweeSpanStringBuilder ?: return@Hook
                     val context = textView.context
                     builder.setTranslated(translateData, context)
                     textView.setDraweeSpanStringBuilder(builder)
@@ -222,7 +226,7 @@ class AITranslate : Plugin() {
                                             Utils.showToast("${err.errorText} (${err.errorCode})", true)
                                         } else {
                                             translatedMessages[message.id] = response
-                                            chatList?.rerenderMessage(message.id)
+                                            rerenderAllChatLists()
                                             Utils.showToast("已完成 AI 翻译")
                                         }
                                         menu.dismiss()
@@ -231,7 +235,7 @@ class AITranslate : Plugin() {
                             }
                         } else {
                             currentEntry.showingOriginal = !currentEntry.showingOriginal
-                            chatList?.rerenderMessage(message.id)
+                            rerenderAllChatLists()
                             menu.dismiss()
                         }
                     } catch (_: Throwable) {}
