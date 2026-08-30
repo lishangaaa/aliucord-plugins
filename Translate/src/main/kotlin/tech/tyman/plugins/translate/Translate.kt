@@ -29,6 +29,7 @@ import com.facebook.drawee.span.DraweeSpanStringBuilder
 import com.lytefast.flexinput.R
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.util.WeakHashMap
 import java.util.regex.Pattern
@@ -37,6 +38,7 @@ import java.util.regex.Pattern
 class AITranslate : Plugin() {
     lateinit var pluginIcon: Drawable
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
+    private val messageViewMap = mutableMapOf<Long, WeakReference<SimpleDraweeSpanTextView>>()
     private val messageLoggerEditedRegex = Pattern.compile("(?:.+ \\(.+: .+\\)\\n)+(.+)\$")
     private val actionsMessageMap = WeakHashMap<WidgetChatListActions, Message>()
     private var draweeField: Field? = null
@@ -166,10 +168,13 @@ class AITranslate : Plugin() {
                     val messageEntry = it.args[1] as? MessageEntry ?: return@Hook
                     val message = messageEntry.message ?: return@Hook
                     val id = message.id
+                    val textView = it.args[0] as? SimpleDraweeSpanTextView ?: return@Hook
+
+                    messageViewMap[id] = WeakReference(textView)
+
                     val translateData = translatedMessages[id] ?: return@Hook
                     if (translateData.showingOriginal) return@Hook
 
-                    val textView = it.args[0] as? SimpleDraweeSpanTextView ?: return@Hook
                     val field = findDraweeField() ?: return@Hook
                     val builder = field.get(textView) as? DraweeSpanStringBuilder ?: return@Hook
                     val context = textView.context
@@ -192,6 +197,22 @@ class AITranslate : Plugin() {
             }
         }
         return null
+    }
+
+    private fun updateViewDirectly(messageId: Long, successData: TranslateSuccessData?) {
+        try {
+            val tv = messageViewMap[messageId]?.get() ?: return
+            val field = findDraweeField() ?: return
+            val builder = field.get(tv) as? DraweeSpanStringBuilder ?: return
+            if (successData != null && !successData.showingOriginal) {
+                builder.setTranslated(successData, tv.context)
+            } else {
+                builder.clear()
+                builder.append(successData?.sourceText ?: "")
+            }
+            tv.setDraweeSpanStringBuilder(builder)
+            tv.invalidate()
+        } catch (_: Throwable) {}
     }
 
     private fun patchMessageContextMenu() {
@@ -226,7 +247,8 @@ class AITranslate : Plugin() {
                                             Utils.showToast("${err.errorText} (${err.errorCode})", true)
                                         } else {
                                             translatedMessages[message.id] = response
-                                            rerenderAllChatLists()
+                                            updateViewDirectly(message.id, response)
+                                            refreshAdapterForMessage(message.id)
                                             Utils.showToast("已完成 AI 翻译")
                                         }
                                         menu.dismiss()
@@ -235,7 +257,8 @@ class AITranslate : Plugin() {
                             }
                         } else {
                             currentEntry.showingOriginal = !currentEntry.showingOriginal
-                            rerenderAllChatLists()
+                            updateViewDirectly(message.id, currentEntry)
+                            refreshAdapterForMessage(message.id)
                             menu.dismiss()
                         }
                     } catch (_: Throwable) {}
