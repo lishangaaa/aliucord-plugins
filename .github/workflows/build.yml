@@ -7,6 +7,7 @@ on:
   pull_request:
     branches-ignore:
       - builds
+  workflow_dispatch:
 
 jobs:
   build:
