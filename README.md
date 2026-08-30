@@ -1,41 +1,38 @@
-# Aliucord-plugins
+# 🌐 AI Translate for Aliucord
 
-Tyman's plugins for [Aliucord](https://github.com/Aliucord)
+<p align="center">
+  <img src="https://img.shields.io/badge/Aliucord-Plugin-7289da?style=flat-square" alt="Aliucord Plugin"/>
+  <img src="https://img.shields.io/badge/API-OpenAI%20%7C%20DeepSeek-blue?style=flat-square" alt="API Support"/>
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"/>
+</p>
 
-#### How To Download
-Click on plugin name in README, and move downloaded file to `/storage/emulated/0/Aliucord/plugins` folder.
+An intelligent message translation plugin for Aliucord powered by Large Language Models (OpenAI, DeepSeek, and any OpenAI-compatible API).
 
-### [Texter](https://github.com/TymanWasTaken/aliucord-plugins/raw/builds/Texter.zip)
-Provides many commands to format your text.
+专为 Aliucord 打造的 AI 智能消息翻译插件，支持 OpenAI、DeepSeek 及任意兼容 OpenAI 格式的自定义 API 接口。
 
-#### Commands
-- small
-- smaller
-- fullwidth
-- emoji
-- flip
-- clap
-- reverse
-- space
-- mock
-- leet
+---
 
-Some commands have aliases like `fw`.
-  
-Inspired greatly by [texter](https://github.com/SkyBlockDev/texter) and [BetterFormattingRedux](https://github.com/rauenzi/BetterDiscordAddons/tree/master/Plugins/BetterFormattingRedux)
+## 🌟 Key Features / 核心功能
 
-### [ShowNames](https://github.com/TymanWasTaken/aliucord-plugins/raw/builds/ShowNames.zip)
+- **Universal API Support**: Compatible with OpenAI, DeepSeek, Moonshot, Ollama, and any custom OpenAI-compatible endpoint.
+- **Natural Language Targets**: Define target languages freely (e.g., *English*, *Simplified Chinese*, *Colloquial Japanese*, *Classical Chinese*).
+- **In-Settings Utilities**: Built-in "Fetch Models" and "Test Connection" tools for seamless setup.
+- **In-Place Translation**: Long-press any message to translate instantly with one-tap toggle between original and translated text.
+- **Robust & Crash-Free**: Fixed Kotlin iterator concurrency issues, state restoration crashes, and lazy-view rendering artifacts.
 
-A plugin that changes the color of usernames to stop them from blending into the background. It will make colors lighter if they match close to your theme's background color (in discord settings). Only works on messages for now. 
+---
 
-### [Translate](https://github.com/TymanWasTaken/aliucord-plugins/raw/builds/Translate.zip)
+- **全协议兼容**：支持 OpenAI、DeepSeek、Moonshot 及任意兼容 OpenAI 规范的自定义中转接口。
+- **自然语言目标语**：支持任意自然语言描述目标语言（如：地道英语、简体中文、二次元口语、文言文等）。
+- **设置页便捷工具**：内置「一键拉取模型列表」与「连通性测试」功能。
+- **无缝嵌入体验**：长按消息菜单一键替换翻译，支持快速切换/显示原文。
+- **底层稳定性优化**：彻底解决 Kotlin 迭代器冲突、状态恢复闪退（State Restoration Crash）以及视图惰性加载异常。
 
-Adds a message context menu action to translate the message to english (configurable later). You can also use /translate to send translated text, or just view it locally.
+---
 
-### [CallTime](https://github.com/TymanWasTaken/aliucord-plugins/raw/builds/CallTime.zip)
+## 📥 Installation / 安装方式
 
-A plugin that shows the time you have been in a VC for
-
-### [ReverseImageSearch](https://github.com/TymanWasTaken/aliucord-plugins/raw/builds/ReverseImageSearch.zip)
-
-Allows you to revere image search by long pressing the "open in browser" button on images.
+### Method 1: Direct Link (直接链接安装)
+Copy the link below and send/click it in any Discord channel inside Aliucord:
+```text
+[https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip](https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip)
