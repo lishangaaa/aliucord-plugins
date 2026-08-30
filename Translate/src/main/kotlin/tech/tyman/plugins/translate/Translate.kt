@@ -44,6 +44,8 @@ class AITranslate : Plugin() {
     private var draweeField: Field? = null
 
     companion object {
+        private const val TRANSLATE_BTN_TAG = "aliucord_ai_translate_btn_tag"
+
         fun isBlankSafe(str: CharSequence?): Boolean {
             if (str == null) return true
             val len = str.length
@@ -217,7 +219,6 @@ class AITranslate : Plugin() {
 
     private fun patchMessageContextMenu() {
         try {
-            val viewId = View.generateViewId()
             val messageContextMenu = WidgetChatListActions::class.java
             val getBinding = messageContextMenu.getDeclaredMethod("getBinding").apply { isAccessible = true }
 
@@ -274,7 +275,7 @@ class AITranslate : Plugin() {
                     actionsMessageMap[menu] = message
 
                     val binding = getBinding.invoke(menu) as? WidgetChatListActionsBinding ?: return@Hook
-                    val translateButton = binding.root.findViewById<TextView>(viewId) ?: return@Hook
+                    val translateButton = binding.root.findViewWithTag<TextView>(TRANSLATE_BTN_TAG) ?: return@Hook
                     bindButton(translateButton, menu, message)
                 } catch (_: Throwable) {}
             })
@@ -286,13 +287,19 @@ class AITranslate : Plugin() {
                     val targetLayout = findLinearLayout(rootView) ?: return@Hook
                     val context = targetLayout.context
 
-                    val button = TextView(context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
-                        id = viewId
-                        if (::pluginIcon.isInitialized) {
-                            setCompoundDrawablesRelativeWithIntrinsicBounds(pluginIcon, null, null, null)
+                    // 如果已经添加过，直接取出来更新，避免重复添加
+                    var button = targetLayout.findViewWithTag<TextView>(TRANSLATE_BTN_TAG)
+                    if (button == null) {
+                        button = TextView(context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
+                            tag = TRANSLATE_BTN_TAG
+                            isSaveEnabled = false
+                            isSaveFromParentEnabled = false
+                            if (::pluginIcon.isInitialized) {
+                                setCompoundDrawablesRelativeWithIntrinsicBounds(pluginIcon, null, null, null)
+                            }
                         }
+                        targetLayout.addView(button)
                     }
-                    targetLayout.addView(button)
 
                     actionsMessageMap[menu]?.let { msg ->
                         bindButton(button, menu, msg)
