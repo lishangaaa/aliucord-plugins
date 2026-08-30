@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.view.View
 import android.widget.LinearLayout
@@ -20,7 +21,7 @@ import com.aliucord.patcher.Hook
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.databinding.WidgetChatListActionsBinding
 import com.discord.models.message.Message
-import com.discord.utilities.textprocessing.node.EditedMessageNode
+import com.discord.utilities.color.ColorCompat
 import com.discord.utilities.view.text.SimpleDraweeSpanTextView
 import com.discord.widgets.chat.list.WidgetChatList
 import com.discord.widgets.chat.list.actions.WidgetChatListActions
@@ -86,18 +87,30 @@ class AITranslate : Plugin() {
     }
 
     private fun DraweeSpanStringBuilder.setTranslated(translateData: TranslateSuccessData, context: Context) {
-        val contentStartIndex = messageLoggerEditedRegex.matcher(this.toString()).let {
-            if (it.find()) {
-                it.start(1)
-            } else 0
-        }
-        this.replace(contentStartIndex, contentStartIndex + translateData.sourceText.length, translateData.translatedText)
-        val textEnd = this.length
-        this.append(" (AI 翻译 -> ${translateData.translatedLanguage})")
-        this.setSpan(RelativeSizeSpan(0.75f), textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        if (textEnd != this.length) {
-            this.setSpan(EditedMessageNode.Companion.`access$getForegroundColorSpan`(EditedMessageNode.Companion, context),
-                textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        try {
+            val contentStartIndex = messageLoggerEditedRegex.matcher(this.toString()).let {
+                if (it.find()) it.start(1) else 0
+            }
+            val targetEnd = (contentStartIndex + translateData.sourceText.length).coerceAtMost(this.length)
+            
+            if (contentStartIndex in 0..this.length && targetEnd >= contentStartIndex) {
+                this.replace(contentStartIndex, targetEnd, translateData.translatedText)
+            } else {
+                this.clear()
+                this.append(translateData.translatedText)
+            }
+
+            val textEnd = this.length
+            this.append(" (AI -> ${translateData.translatedLanguage})")
+            this.setSpan(RelativeSizeSpan(0.75f), textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            
+            try {
+                val mutedColor = ColorCompat.getThemedColor(context, R.b.colorTextMuted)
+                this.setSpan(ForegroundColorSpan(mutedColor), textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            this.clear()
+            this.append(translateData.translatedText)
         }
     }
 
@@ -109,21 +122,22 @@ class AITranslate : Plugin() {
         val mDraweeStringBuilder: Field = SimpleDraweeSpanTextView::class.java.getDeclaredField("mDraweeStringBuilder")
         mDraweeStringBuilder.isAccessible = true
         patcher.patch(WidgetChatListAdapterItemMessage::class.java, "processMessageText", arrayOf(SimpleDraweeSpanTextView::class.java, MessageEntry::class.java), Hook {
-            val messageEntry = it.args[1] as MessageEntry
-            val message = messageEntry.message ?: return@Hook
-            val id = message.id
-            val translateData = translatedMessages[id] ?: return@Hook
-            if (translateData.showingOriginal) return@Hook
-            if (translateData.sourceText != message.content) {
-                translatedMessages.remove(id)
-                return@Hook
-            }
-            val textView = it.args[0] as SimpleDraweeSpanTextView
-            val builder = mDraweeStringBuilder[textView] as DraweeSpanStringBuilder?
-                ?: return@Hook
-            val context = textView.context
-            builder.setTranslated(translateData, context)
-            textView.setDraweeSpanStringBuilder(builder)
+            try {
+                val messageEntry = it.args[1] as MessageEntry
+                val message = messageEntry.message ?: return@Hook
+                val id = message.id
+                val translateData = translatedMessages[id] ?: return@Hook
+                if (translateData.showingOriginal) return@Hook
+                if (translateData.sourceText != message.content) {
+                    translatedMessages.remove(id)
+                    return@Hook
+                }
+                val textView = it.args[0] as SimpleDraweeSpanTextView
+                val builder = mDraweeStringBuilder[textView] as DraweeSpanStringBuilder? ?: return@Hook
+                val context = textView.context
+                builder.setTranslated(translateData, context)
+                textView.setDraweeSpanStringBuilder(builder)
+            } catch (_: Throwable) {}
         })
     }
 
@@ -149,20 +163,19 @@ class AITranslate : Plugin() {
                     Utils.showToast("正在请求 AI 翻译...")
                     Utils.threadPool.execute {
                         val response = translateMessage(message.content)
-                        if (response !is TranslateSuccessData) {
-                            with(response as TranslateErrorData) {
-                                Utils.mainThread.post {
-                                    Utils.showToast("$errorText ($errorCode)", true)
-                                }
-                                return@execute
-                            }
-                        }
-                        translatedMessages[message.id] = response
                         Utils.mainThread.post {
-                            chatList?.rerenderMessage(message.id)
-                            Utils.showToast("已完成 AI 翻译")
+                            try {
+                                if (response !is TranslateSuccessData) {
+                                    val err = response as TranslateErrorData
+                                    Utils.showToast("${err.errorText} (${err.errorCode})", true)
+                                } else {
+                                    translatedMessages[message.id] = response
+                                    chatList?.rerenderMessage(message.id)
+                                    Utils.showToast("已完成 AI 翻译")
+                                }
+                                menu.dismiss()
+                            } catch (_: Throwable) {}
                         }
-                        menu.dismiss()
                     }
                 } else {
                     currentEntry.showingOriginal = !currentEntry.showingOriginal
