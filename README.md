@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Aliucord-Plugin-7289da?style=flat-square" alt="Aliucord Plugin"/>
   <img src="https://img.shields.io/badge/API-OpenAI%20%7C%20DeepSeek-blue?style=flat-square" alt="API Support"/>
-  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"/>
+  <img src="https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-orange?style=flat-square" alt="License"/>
 </p>
 
 An intelligent message translation plugin for Aliucord powered by Large Language Models (OpenAI, DeepSeek, and any OpenAI-compatible API).
