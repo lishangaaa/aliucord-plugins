@@ -1,16 +1,36 @@
 package com.lishangaaa.plugins.aitranslate
 
-import com.aliucord.CollectionUtils
-import com.discord.widgets.chat.list.WidgetChatList
-import com.discord.widgets.chat.list.entries.MessageEntry
+import android.view.View
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.aliucord.Utils
 
-fun WidgetChatList.rerenderMessage(messageId: Long) {
-    val adapter = WidgetChatList.`access$getAdapter$p`(this)
-    val data = adapter.internalData
-    val i = CollectionUtils.findIndex(data) { m ->
-        m is MessageEntry && m.message.id == messageId
+fun rerenderAllChatLists() {
+    Utils.mainThread.post {
+        try {
+            val activity = Utils.appActivity ?: return@post
+            val root = activity.window.decorView
+            val list = ArrayList<RecyclerView>()
+            findRecyclerViews(root, list)
+            for (rv in list) {
+                rv.adapter?.notifyDataSetChanged()
+            }
+        } catch (_: Throwable) {}
     }
-    if (i != -1) adapter.notifyItemChanged(i)
+}
+
+private fun findRecyclerViews(view: View, outList: MutableList<RecyclerView>) {
+    if (view is RecyclerView) {
+        outList.add(view)
+    }
+    if (view is ViewGroup) {
+        var i = 0
+        val count = view.childCount
+        while (i < count) {
+            findRecyclerViews(view.getChildAt(i), outList)
+            i++
+        }
+    }
 }
 
 open class TranslateData
