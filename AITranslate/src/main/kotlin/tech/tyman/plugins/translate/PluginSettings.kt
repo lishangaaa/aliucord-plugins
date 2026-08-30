@@ -46,7 +46,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 val rawUrl = urlInput.editText.text.toString().trim()
                 val apiKey = keyInput.editText.text.toString().trim()
 
-                if (apiKey.isBlank()) {
+                if (apiKey.isEmpty()) {
                     Utils.showToast("请先填写 API Key！", true)
                     return@setOnClickListener
                 }
@@ -54,7 +54,8 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 Utils.showToast("正在拉取模型...")
                 Utils.threadPool.execute {
                     try {
-                        val modelsUrl = if (rawUrl.trimEnd('/').endsWith("/v1")) "${rawUrl.trimEnd('/')}/models" else "${rawUrl.trimEnd('/')}/v1/models"
+                        val trimmedUrl = rawUrl.trimEnd('/')
+                        val modelsUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/models" else "$trimmedUrl/v1/models"
                         val res = Http.Request(modelsUrl, "GET")
                             .setHeader("Authorization", "Bearer $apiKey")
                             .execute()
@@ -65,9 +66,14 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                         }
 
                         val dataArray = JSONObject(res.text()).optJSONArray("data") ?: JSONArray()
-                        val modelNames = (0 until dataArray.length()).mapNotNull {
-                            dataArray.optJSONObject(it)?.optString("id")
-                        }.sorted()
+                        val modelNames = ArrayList<String>()
+                        for (i in 0 until dataArray.length()) {
+                            val id = dataArray.optJSONObject(i)?.optString("id")
+                            if (!id.isNullOrEmpty()) {
+                                modelNames.add(id)
+                            }
+                        }
+                        modelNames.sort()
 
                         Utils.mainThread.post {
                             val act = activity ?: Utils.appActivity ?: return@post
@@ -97,7 +103,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 val apiKey = keyInput.editText.text.toString().trim()
                 val model = modelInput.editText.text.toString().trim()
 
-                if (apiKey.isBlank()) {
+                if (apiKey.isEmpty()) {
                     Utils.showToast("请先填写 API Key！", true)
                     return@setOnClickListener
                 }
@@ -105,7 +111,8 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 Utils.showToast("正在测试连通性...")
                 Utils.threadPool.execute {
                     val start = System.currentTimeMillis()
-                    val chatUrl = if (rawUrl.trimEnd('/').endsWith("/v1")) "${rawUrl.trimEnd('/')}/chat/completions" else "${rawUrl.trimEnd('/')}/v1/chat/completions"
+                    val trimmedUrl = rawUrl.trimEnd('/')
+                    val chatUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/chat/completions" else "$trimmedUrl/v1/chat/completions"
                     try {
                         val body = JSONObject().apply {
                             put("model", model)
