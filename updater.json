@@ -1,6 +1,6 @@
 {
   "AI Translate": {
-    "version": "1.0.0",
+    "version": "1.0.3",
     "description": "Translate Discord messages using any OpenAI/DeepSeek compatible LLM API.",
     "changelog": "# Version 1.0.0\n* Initial release: Customizable AI translation powered by LLM endpoints.",
     "author": "lishangaaa, Tyman",
