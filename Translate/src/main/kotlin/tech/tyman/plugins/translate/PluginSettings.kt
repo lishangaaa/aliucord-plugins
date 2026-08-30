@@ -19,26 +19,31 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         setActionBarTitle("AI Translate 设置")
         val ctx = requireContext()
 
-        val urlInput = TextInput(ctx, "Base URL (支持填根路径或完整 endpoint)").apply {
+        // 1. Base URL
+        val urlInput = TextInput(ctx, "Base URL (支持根路径或完整 endpoint)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("apiUrl", "https://api.openai.com/v1"))
         }
 
+        // 2. API Key
         val keyInput = TextInput(ctx, "API Key (sk-...)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("apiKey", ""))
         }
 
+        // 3. 模型名称
         val modelInput = TextInput(ctx, "Model Name (如 gpt-4o-mini, deepseek-chat)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("model", "gpt-4o-mini"))
         }
 
-        val langInput = TextInput(ctx, "默认翻译目标语言 (如 zh, en, ja)").apply {
+        // 4. 默认目标语言（支持任意自然语言风格描述）
+        val langInput = TextInput(ctx, "默认翻译目标 (如 中文, 英语, 日文, 文言文, 猫娘语气)").apply {
             editText.maxLines = 1
-            editText.setText(settings.getString("defaultLanguage", "zh"))
+            editText.setText(settings.getString("defaultLanguage", "中文"))
         }
 
+        // 按钮：获取模型列表
         val fetchModelsButton = Button(ctx).apply {
             text = "获取模型列表"
             setOnClickListener {
@@ -96,6 +101,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
             }
         }
 
+        // 按钮：测试连接
         val testButton = Button(ctx).apply {
             text = "测试连接"
             setOnClickListener {
@@ -143,6 +149,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
             }
         }
 
+        // 按钮：保存配置
         val saveButton = Button(ctx).apply {
             text = "保存配置"
             setOnClickListener {
@@ -156,7 +163,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         }
 
         val tipText = TextView(ctx).apply {
-            text = "\n使用说明：\n1. Base URL 可以直接填中转站地址（如 https://api.openai.com/v1 或 https://api.deepseek.com）。\n2. 填完 Key 后可点击【获取模型列表】一键挑选模型。\n3. 点击【测试连接】可验证配置与网络可用性。"
+            text = "\n使用提示：\n1. 目标语言直接支持自然语言（例如“中文”、“文言文”、“接地气的口语”、“猫娘语气”等）。\n2. 填完 Key 可点击【获取模型列表】快捷选择模型。\n3. 点击【测试连接】可验证 API 与网络连通性。"
             setTextColor(ColorCompat.getThemedColor(ctx, R.b.colorOnPrimary))
         }
 
