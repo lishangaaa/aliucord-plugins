@@ -198,11 +198,9 @@ class AITranslate : Plugin() {
                     Utils.mainThread.post {
                         if (response is TranslateSuccessData) {
                             translatedMessages[message.id] = response
-                            // 立即直接更新当前视口中的 TextView
                             messageViewMap[message.id]?.get()?.let { tv ->
                                 renderTranslatedText(tv, response)
                             }
-                            // 全局同步更新 Adapter
                             refreshChatList()
                             Utils.showToast("翻译完成")
                         } else if (response is TranslateErrorData) {
@@ -215,7 +213,7 @@ class AITranslate : Plugin() {
                 current.showingOriginal = !current.showingOriginal
                 messageViewMap[message.id]?.get()?.let { tv ->
                     if (current.showingOriginal) {
-                        val originalBuilder = DraweeSpanStringBuilder(current.sourceText)
+                        val originalBuilder = DraweeSpanStringBuilder().apply { append(current.sourceText) }
                         tv.setDraweeSpanStringBuilder(originalBuilder)
                         tv.text = originalBuilder
                     } else {
