@@ -11,12 +11,13 @@ import com.aliucord.views.Button
 import com.aliucord.views.TextInput
 import com.discord.utilities.color.ColorCompat
 import com.lytefast.flexinput.R
+import org.json.JSONArray
 import org.json.JSONObject
 
 class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
     override fun onViewBound(view: View?) {
         super.onViewBound(view)
-        setActionBarTitle("AI 翻译设置 (AI Translate)")
+        setActionBarTitle("AI 翻译设置")
         val ctx = requireContext()
 
         val urlInput = TextInput(ctx, "API 接口地址 (Base URL)").apply {
@@ -34,13 +35,13 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
             editText.setText(settings.getString("model", "gpt-4o-mini"))
         }
 
-        val langInput = TextInput(ctx, "翻译目标 (如: 中文, English, 日文, 东北话, 梗体中文)").apply {
+        val langInput = TextInput(ctx, "默认翻译目标语言").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("defaultLanguage", "中文"))
         }
 
         val fetchModelsButton = Button(ctx).apply {
-            text = "获取模型列表 (Fetch Models)"
+            text = "获取模型列表"
             setOnClickListener {
                 val rawUrl = urlInput.editText.text.toString().trim()
                 val apiKey = keyInput.editText.text.toString().trim()
@@ -53,63 +54,50 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 Utils.showToast("正在拉取模型...")
                 Utils.threadPool.execute {
                     try {
-                        val modelsUrl = formatModelsUrl(rawUrl)
+                        val trimmedUrl = rawUrl.trimEnd('/')
+                        val modelsUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/models" else "$trimmedUrl/v1/models"
                         val res = Http.Request(modelsUrl, "GET")
                             .setHeader("Authorization", "Bearer $apiKey")
                             .execute()
 
                         if (!res.ok()) {
-                            Utils.mainThread.post {
-                                Utils.showToast("获取失败 (${res.statusCode})", true)
-                            }
+                            Utils.mainThread.post { Utils.showToast("获取失败 (${res.statusCode})", true) }
                             return@execute
                         }
 
-                        val json = JSONObject(res.text())
-                        val dataArray = json.optJSONArray("data")
-                        if (dataArray == null || dataArray.length() == 0) {
-                            Utils.mainThread.post {
-                                Utils.showToast("未找到可用模型 (data 列表为空)", true)
-                            }
-                            return@execute
-                        }
-
+                        val dataArray = JSONObject(res.text()).optJSONArray("data") ?: JSONArray()
                         val modelNames = ArrayList<String>()
                         for (i in 0 until dataArray.length()) {
-                            val item = dataArray.optJSONObject(i)
-                            if (item != null && item.has("id")) {
-                                modelNames.add(item.getString("id"))
+                            val id = dataArray.optJSONObject(i)?.optString("id")
+                            if (!id.isNullOrEmpty()) {
+                                modelNames.add(id)
                             }
                         }
                         modelNames.sort()
 
                         Utils.mainThread.post {
-                            val act = Utils.appActivity ?: activity
-                            if (act == null || act.isFinishing) return@post
+                            val act = activity ?: Utils.appActivity ?: return@post
                             if (modelNames.isEmpty()) {
-                                Utils.showToast("未找到有效模型 ID")
+                                Utils.showToast("未找到可用模型", true)
                                 return@post
                             }
                             AlertDialog.Builder(act)
-                                .setTitle("选择模型 (共 ${modelNames.size} 个)")
+                                .setTitle("选择模型 (${modelNames.size} 个)")
                                 .setItems(modelNames.toTypedArray()) { _, which ->
-                                    val selected = modelNames[which]
-                                    modelInput.editText.setText(selected)
-                                    Utils.showToast("已选择: $selected")
+                                    modelInput.editText.setText(modelNames[which])
+                                    Utils.showToast("已选择: ${modelNames[which]}")
                                 }
                                 .show()
                         }
                     } catch (e: Exception) {
-                        Utils.mainThread.post {
-                            Utils.showToast("请求出错: ${e.localizedMessage ?: e.message}", true)
-                        }
+                        Utils.mainThread.post { Utils.showToast("请求出错: ${e.message}", true) }
                     }
                 }
             }
         }
 
         val testButton = Button(ctx).apply {
-            text = "测试连接 (Test Connection)"
+            text = "测试连接"
             setOnClickListener {
                 val rawUrl = urlInput.editText.text.toString().trim()
                 val apiKey = keyInput.editText.text.toString().trim()
@@ -123,40 +111,37 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 Utils.showToast("正在测试连通性...")
                 Utils.threadPool.execute {
                     val start = System.currentTimeMillis()
-                    val chatUrl = formatChatUrl(rawUrl)
+                    val trimmedUrl = rawUrl.trimEnd('/')
+                    val chatUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/chat/completions" else "$trimmedUrl/v1/chat/completions"
                     try {
-                        val json = JSONObject().apply {
+                        val body = JSONObject().apply {
                             put("model", model)
-                            put("messages", org.json.JSONArray().apply {
-                                put(JSONObject().put("role", "user").put("content", "hi"))
-                            })
-                            put("max_tokens", 16)
+                            put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "hi")))
+                            put("max_tokens", 5)
                         }
 
                         val res = Http.Request(chatUrl, "POST")
                             .setHeader("Authorization", "Bearer $apiKey")
                             .setHeader("Content-Type", "application/json")
-                            .executeWithBody(json.toString())
+                            .executeWithBody(body.toString())
 
                         val cost = System.currentTimeMillis() - start
                         Utils.mainThread.post {
                             if (res.ok()) {
-                                Utils.showToast("连接正常！响应耗时: ${cost}ms")
+                                Utils.showToast("连接正常！耗时: ${cost}ms")
                             } else {
                                 Utils.showToast("连接失败 (${res.statusCode})", true)
                             }
                         }
                     } catch (e: Exception) {
-                        Utils.mainThread.post {
-                            Utils.showToast("网络连接异常: ${e.localizedMessage ?: e.message}", true)
-                        }
+                        Utils.mainThread.post { Utils.showToast("网络异常: ${e.message}", true) }
                     }
                 }
             }
         }
 
         val saveButton = Button(ctx).apply {
-            text = "保存配置 (Save)"
+            text = "保存配置"
             setOnClickListener {
                 settings.setString("apiUrl", urlInput.editText.text.toString().trim())
                 settings.setString("apiKey", keyInput.editText.text.toString().trim())
@@ -168,7 +153,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         }
 
         val tipText = TextView(ctx).apply {
-            text = "\n💡 小提示：\n• 支持所有兼容 OpenAI 格式的中转站及 DeepSeek、Claude、通义千问等模型。\n• 翻译目标可自由发挥（例如输入「幽默接地气的口语」、「日文」或「粤语」）。"
+            text = "\n💡 支持 OpenAI 格式中转站、DeepSeek、Claude 等。"
             setTextColor(ColorCompat.getThemedColor(ctx, R.b.colorOnPrimary))
         }
 
@@ -180,22 +165,5 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         addView(testButton)
         addView(saveButton)
         addView(tipText)
-    }
-
-    private fun formatChatUrl(baseUrl: String): String {
-        val url = baseUrl.trim().trimEnd('/')
-        return when {
-            url.endsWith("/chat/completions") -> url
-            url.endsWith("/v1") -> "$url/chat/completions"
-            else -> "$url/v1/chat/completions"
-        }
-    }
-
-    private fun formatModelsUrl(baseUrl: String): String {
-        var url = baseUrl.trim().trimEnd('/')
-        if (url.endsWith("/chat/completions")) {
-            url = url.substringBeforeLast("/chat/completions")
-        }
-        return if (url.endsWith("/v1")) "$url/models" else "$url/v1/models"
     }
 }
