@@ -35,9 +35,8 @@ subprojects {
     apply(plugin = "kotlin-android")
 
     aliucord {
-        author("Ty", 487443883127472129L)
-        updateUrl.set("https://raw.githubusercontent.com/TymanWasTaken/aliucord-plugins/builds/updater.json")
-        buildUrl.set("https://raw.githubusercontent.com/TymanWasTaken/aliucord-plugins/builds/%s.zip")
+        updateUrl.set("https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/updater.json")
+        buildUrl.set("https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/%s.zip")
         minimumDiscordVersion.set(126021)
     }
 
