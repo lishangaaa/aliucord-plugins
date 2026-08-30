@@ -4,8 +4,9 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.aliucord.Utils
+import com.discord.models.message.Message
 
-fun rerenderAllChatLists() {
+fun refreshAdapterForMessage(messageId: Long) {
     Utils.mainThread.post {
         try {
             val activity = Utils.appActivity ?: return@post
@@ -13,7 +14,45 @@ fun rerenderAllChatLists() {
             val list = ArrayList<RecyclerView>()
             findRecyclerViews(root, list)
             for (rv in list) {
-                rv.adapter?.notifyDataSetChanged()
+                val adapter = rv.adapter ?: continue
+                var updated = false
+                val fields = adapter.javaClass.declaredFields
+                var fIdx = 0
+                while (fIdx < fields.size) {
+                    val field = fields[fIdx]
+                    field.isAccessible = true
+                    val value = field.get(adapter)
+                    if (value is List<*>) {
+                        var i = 0
+                        while (i < value.size) {
+                            val item = value[i]
+                            if (item != null) {
+                                val itemFields = item.javaClass.declaredFields
+                                var mIdx = 0
+                                while (mIdx < itemFields.size) {
+                                    val itemField = itemFields[mIdx]
+                                    if (Message::class.java.isAssignableFrom(itemField.type) || itemField.name.equals("message", ignoreCase = true)) {
+                                        itemField.isAccessible = true
+                                        val msg = itemField.get(item) as? Message
+                                        if (msg?.id == messageId) {
+                                            adapter.notifyItemChanged(i)
+                                            updated = true
+                                            break
+                                        }
+                                    }
+                                    mIdx++
+                                }
+                            }
+                            if (updated) break
+                            i++
+                        }
+                    }
+                    if (updated) break
+                    fIdx++
+                }
+                if (!updated) {
+                    adapter.notifyDataSetChanged()
+                }
             }
         } catch (_: Throwable) {}
     }
