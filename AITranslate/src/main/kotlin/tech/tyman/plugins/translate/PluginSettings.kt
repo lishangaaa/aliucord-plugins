@@ -66,19 +66,31 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                         }
 
                         val json = JSONObject(res.text())
-                        val dataArray = json.getJSONArray("data")
+                        val dataArray = json.optJSONArray("data")
+                        if (dataArray == null || dataArray.length() == 0) {
+                            Utils.mainThread.post {
+                                Utils.showToast("未找到可用模型 (data 列表为空)", true)
+                            }
+                            return@execute
+                        }
+
                         val modelNames = ArrayList<String>()
                         for (i in 0 until dataArray.length()) {
-                            modelNames.add(dataArray.getJSONObject(i).getString("id"))
+                            val item = dataArray.optJSONObject(i)
+                            if (item != null && item.has("id")) {
+                                modelNames.add(item.getString("id"))
+                            }
                         }
                         modelNames.sort()
 
                         Utils.mainThread.post {
+                            val act = Utils.appActivity ?: activity
+                            if (act == null || act.isFinishing) return@post
                             if (modelNames.isEmpty()) {
-                                Utils.showToast("未找到可用模型")
+                                Utils.showToast("未找到有效模型 ID")
                                 return@post
                             }
-                            AlertDialog.Builder(ctx)
+                            AlertDialog.Builder(act)
                                 .setTitle("选择模型 (共 ${modelNames.size} 个)")
                                 .setItems(modelNames.toTypedArray()) { _, which ->
                                     val selected = modelNames[which]
@@ -118,7 +130,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                             put("messages", org.json.JSONArray().apply {
                                 put(JSONObject().put("role", "user").put("content", "hi"))
                             })
-                            put("max_tokens", 5)
+                            put("max_tokens", 16)
                         }
 
                         val res = Http.Request(chatUrl, "POST")
@@ -171,7 +183,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
     }
 
     private fun formatChatUrl(baseUrl: String): String {
-        val url = baseUrl.trimEnd('/')
+        val url = baseUrl.trim().trimEnd('/')
         return when {
             url.endsWith("/chat/completions") -> url
             url.endsWith("/v1") -> "$url/chat/completions"
@@ -180,7 +192,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
     }
 
     private fun formatModelsUrl(baseUrl: String): String {
-        var url = baseUrl.trimEnd('/')
+        var url = baseUrl.trim().trimEnd('/')
         if (url.endsWith("/chat/completions")) {
             url = url.substringBeforeLast("/chat/completions")
         }
