@@ -8,7 +8,6 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewParent
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -31,14 +30,15 @@ import com.lytefast.flexinput.R
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference
+import java.util.ArrayDeque
 import java.util.WeakHashMap
 
 @AliucordPlugin
 class AITranslate : Plugin() {
     private var pluginIcon: Drawable? = null
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
+    private val messageViewMap = mutableMapOf<Long, WeakReference<SimpleDraweeSpanTextView>>()
     private val actionsMessageMap = WeakHashMap<WidgetChatListActions, Message>()
-    private var cachedRecyclerView: WeakReference<RecyclerView>? = null
 
     companion object {
         private const val TRANSLATE_BTN_TAG = "aliucord_ai_translate_btn_tag"
@@ -85,19 +85,46 @@ class AITranslate : Plugin() {
         }
     }
 
-    private fun findParentRecyclerView(view: View): RecyclerView? {
-        var current: ViewParent? = view.parent
-        while (current != null) {
-            if (current is RecyclerView) return current
-            current = current.parent
-        }
-        return null
+    private fun renderTranslatedText(textView: SimpleDraweeSpanTextView, data: TranslateSuccessData) {
+        val builder = DraweeSpanStringBuilder()
+        builder.append(data.translatedText)
+        val start = builder.length
+        builder.append(" (AI -> ${data.translatedLanguage})")
+        builder.setSpan(RelativeSizeSpan(0.75f), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        try {
+            val mutedColor = ColorCompat.getThemedColor(textView.context, R.b.colorTextMuted)
+            builder.setSpan(ForegroundColorSpan(mutedColor), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        } catch (_: Throwable) {}
+
+        textView.setDraweeSpanStringBuilder(builder)
+        textView.text = builder
     }
 
     private fun refreshChatList() {
         Utils.mainThread.post {
-            cachedRecyclerView?.get()?.adapter?.notifyDataSetChanged()
+            val activity = Utils.appActivity ?: return@post
+            val decor = activity.window?.decorView ?: return@post
+            findRecyclerViews(decor).forEach { rv ->
+                rv.adapter?.notifyDataSetChanged()
+            }
         }
+    }
+
+    private fun findRecyclerViews(root: View): List<RecyclerView> {
+        val list = ArrayList<RecyclerView>()
+        val queue = ArrayDeque<View>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            if (v is RecyclerView) {
+                list.add(v)
+            } else if (v is ViewGroup) {
+                for (i in 0 until v.childCount) {
+                    queue.add(v.getChildAt(i))
+                }
+            }
+        }
+        return list
     }
 
     private fun patchProcessMessageText() {
@@ -110,26 +137,11 @@ class AITranslate : Plugin() {
                 val message = messageEntry.message ?: return@Hook
                 val textView = it.args[0] as? SimpleDraweeSpanTextView ?: return@Hook
 
-                // 向上查找并缓存聊天列表 RecyclerView（高效且无反射）
-                if (cachedRecyclerView?.get() == null) {
-                    findParentRecyclerView(textView)?.let { rv ->
-                        cachedRecyclerView = WeakReference(rv)
-                    }
-                }
+                messageViewMap[message.id] = WeakReference(textView)
 
                 val data = translatedMessages[message.id] ?: return@Hook
                 if (!data.showingOriginal) {
-                    val builder = DraweeSpanStringBuilder()
-                    builder.append(data.translatedText)
-                    val start = builder.length
-                    builder.append(" (AI -> ${data.translatedLanguage})")
-                    builder.setSpan(RelativeSizeSpan(0.75f), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    try {
-                        val mutedColor = ColorCompat.getThemedColor(textView.context, R.b.colorTextMuted)
-                        builder.setSpan(ForegroundColorSpan(mutedColor), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    } catch (_: Throwable) {}
-
-                    textView.setDraweeSpanStringBuilder(builder)
+                    renderTranslatedText(textView, data)
                 }
             }
         )
@@ -186,6 +198,11 @@ class AITranslate : Plugin() {
                     Utils.mainThread.post {
                         if (response is TranslateSuccessData) {
                             translatedMessages[message.id] = response
+                            // 立即直接更新当前视口中的 TextView
+                            messageViewMap[message.id]?.get()?.let { tv ->
+                                renderTranslatedText(tv, response)
+                            }
+                            // 全局同步更新 Adapter
                             refreshChatList()
                             Utils.showToast("翻译完成")
                         } else if (response is TranslateErrorData) {
@@ -196,6 +213,15 @@ class AITranslate : Plugin() {
                 }
             } else {
                 current.showingOriginal = !current.showingOriginal
+                messageViewMap[message.id]?.get()?.let { tv ->
+                    if (current.showingOriginal) {
+                        val originalBuilder = DraweeSpanStringBuilder(current.sourceText)
+                        tv.setDraweeSpanStringBuilder(originalBuilder)
+                        tv.text = originalBuilder
+                    } else {
+                        renderTranslatedText(tv, current)
+                    }
+                }
                 refreshChatList()
                 menu.dismiss()
             }
