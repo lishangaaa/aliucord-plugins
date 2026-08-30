@@ -1,4 +1,4 @@
-package tech.tyman.plugins.translate
+package com.lishangaaa.plugins.aitranslate
 
 import com.aliucord.CollectionUtils
 import com.discord.api.commands.CommandChoice
