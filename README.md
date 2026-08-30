@@ -1,3 +1,4 @@
+```markdown
 # 🌐 AI Translate for Aliucord
 
 <p align="center">
@@ -17,7 +18,7 @@ An intelligent message translation plugin for Aliucord powered by Large Language
 - **Universal API Support**: Compatible with OpenAI, DeepSeek, Moonshot, Ollama, and any custom OpenAI-compatible endpoint.
 - **Natural Language Targets**: Define target languages freely (e.g., *English*, *Simplified Chinese*, *Colloquial Japanese*, *Classical Chinese*).
 - **In-Settings Utilities**: Built-in "Fetch Models" and "Test Connection" tools for seamless setup.
-- **In-Place Translation**: Long-press any message to translate instantly with one-tap toggle between original and translated text.
+- **In-Place Translation**: Long-press any message to translate instantly with a one-tap toggle between original and translated text.
 - **Robust & Crash-Free**: Fixed Kotlin iterator concurrency issues, state restoration crashes, and lazy-view rendering artifacts.
 
 ---
@@ -30,9 +31,43 @@ An intelligent message translation plugin for Aliucord powered by Large Language
 
 ---
 
+## 📸 Screenshots / 效果预览
+
+| Settings Page / 设置页面 | Translation in Action / 翻译效果 |
+| :---: | :---: |
+| *(Image Placeholder 1: Settings & Model Selector)* | *(Image Placeholder 2: Message Context Menu & Translated Text)* |
+
+---
+
 ## 📥 Installation / 安装方式
 
 ### Method 1: Direct Link (直接链接安装)
 Copy the link below and send/click it in any Discord channel inside Aliucord:
 ```text
 [https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip](https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip)
+
+```
+
+### Method 2: Manual Download (手动安装)
+
+1. Download `AITranslate.zip` from the `builds` branch.
+2. Move it into your device's `Aliucord/plugins/` directory.
+3. Restart Aliucord.
+
+---
+
+## ⚙️ Configuration / 配置指南
+
+1. Open **Aliucord Settings -> Plugins -> AI Translate**.
+2. Enter your **API Base URL** (e.g., `https://api.deepseek.com/v1` or `https://api.openai.com/v1`).
+3. Enter your **API Key**.
+4. Click **Fetch Models** to pick a model or enter one manually (e.g., `deepseek-chat`, `gpt-4o-mini`).
+5. Set your preferred **Target Language**.
+6. Click **Test Connection** to verify settings.
+
+---
+
+## 📄 License & Credits
+
+* Licensed under the [CC BY-NC-SA 4.0 License](https://www.google.com/search?q=LICENSE) (Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International).
+* **Credits**: Forked and heavily rewritten based on [Translate](https://github.com/TymanWasTaken/aliucord-plugins) by [Tyman](https://github.com/TymanWasTaken).
