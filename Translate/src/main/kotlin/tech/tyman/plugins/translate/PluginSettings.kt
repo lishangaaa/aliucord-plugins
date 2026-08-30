@@ -1,4 +1,4 @@
-package tech.tyman.plugins.translate
+package com.lishangaaa.plugins.aitranslate
 
 import android.app.AlertDialog
 import android.view.View
@@ -19,31 +19,26 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         setActionBarTitle("AI Translate 设置")
         val ctx = requireContext()
 
-        // 1. Base URL
         val urlInput = TextInput(ctx, "Base URL (支持填根路径或完整 endpoint)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("apiUrl", "https://api.openai.com/v1"))
         }
 
-        // 2. API Key
         val keyInput = TextInput(ctx, "API Key (sk-...)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("apiKey", ""))
         }
 
-        // 3. 模型名称
         val modelInput = TextInput(ctx, "Model Name (如 gpt-4o-mini, deepseek-chat)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("model", "gpt-4o-mini"))
         }
 
-        // 4. 默认目标语言
         val langInput = TextInput(ctx, "默认翻译目标语言 (如 zh, en, ja)").apply {
             editText.maxLines = 1
             editText.setText(settings.getString("defaultLanguage", "zh"))
         }
 
-        // 按钮：获取模型列表
         val fetchModelsButton = Button(ctx).apply {
             text = "获取模型列表"
             setOnClickListener {
@@ -101,7 +96,6 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
             }
         }
 
-        // 按钮：测试连接
         val testButton = Button(ctx).apply {
             text = "测试连接"
             setOnClickListener {
@@ -149,7 +143,6 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
             }
         }
 
-        // 按钮：保存配置
         val saveButton = Button(ctx).apply {
             text = "保存配置"
             setOnClickListener {
