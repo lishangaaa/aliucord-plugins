@@ -1,4 +1,4 @@
-version = "1.0.2"
+version = "1.0.3"
 description = "Translate Discord messages using any OpenAI/DeepSeek compatible LLM API."
 
 aliucord {
@@ -7,7 +7,7 @@ aliucord {
     author("Tyman", 487443883127472129L)
 
     changelog.set("""
-        # Version 1.0.2
-        * 更新readme文件
+        # Version 1.0.3
+        * 修复bug，优化体验
     """.trimIndent())
 }
