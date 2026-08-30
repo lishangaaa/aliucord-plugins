@@ -1,4 +1,4 @@
-package tech.tyman.plugins.translate
+package com.lishangaaa.plugins.aitranslate
 
 import android.content.Context
 import android.graphics.drawable.Drawable
@@ -33,7 +33,7 @@ import java.lang.reflect.Field
 import java.util.regex.Pattern
 
 @AliucordPlugin
-class Translate : Plugin() {
+class AITranslate : Plugin() {
     lateinit var pluginIcon: Drawable
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
     private var chatList: WidgetChatList? = null
