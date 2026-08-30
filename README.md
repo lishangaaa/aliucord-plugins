@@ -1,4 +1,3 @@
-```markdown
 # 🌐 AI Translate for Aliucord
 
 <p align="center">
@@ -46,7 +45,6 @@ Copy the link below and send/click it in any Discord channel inside Aliucord:
 ```text
 [https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip](https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip)
 
-```
 
 ### Method 2: Manual Download (手动安装)
 
