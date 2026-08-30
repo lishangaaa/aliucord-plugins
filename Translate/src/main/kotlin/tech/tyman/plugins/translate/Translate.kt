@@ -55,11 +55,11 @@ class AITranslate : Plugin() {
         patchProcessMessageText()
         commands.registerCommand(
             "translate",
-            "使用自定义 AI API 翻译文本",
+            "使用 AI API 翻译文本",
             listOf(
                 Utils.createCommandOption(ApplicationCommandType.STRING, "text", "需要翻译的内容"),
-                Utils.createCommandOption(ApplicationCommandType.STRING, "to", "目标语言代码 (如 zh, en, ja)", choices = languageCodeChoices),
-                Utils.createCommandOption(ApplicationCommandType.STRING, "from", "源语言代码 (默认 auto)", choices = languageCodeChoices),
+                Utils.createCommandOption(ApplicationCommandType.STRING, "to", "目标语言或风格 (如 中文, 英语, 日文, 文言文)"),
+                Utils.createCommandOption(ApplicationCommandType.STRING, "from", "源语言 (可选，默认自动识别)"),
                 Utils.createCommandOption(ApplicationCommandType.BOOLEAN, "send", "是否直接发送到聊天中 (默认 true)")
             )
         ) { ctx ->
@@ -93,7 +93,7 @@ class AITranslate : Plugin() {
         }
         this.replace(contentStartIndex, contentStartIndex + translateData.sourceText.length, translateData.translatedText)
         val textEnd = this.length
-        this.append(" (AI 翻译: ${translateData.sourceLanguage} -> ${translateData.translatedLanguage})")
+        this.append(" (AI 翻译 -> ${translateData.translatedLanguage})")
         this.setSpan(RelativeSizeSpan(0.75f), textEnd, this.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         if (textEnd != this.length) {
             this.setSpan(EditedMessageNode.Companion.`access$getForegroundColorSpan`(EditedMessageNode.Companion, context),
@@ -216,8 +216,8 @@ class AITranslate : Plugin() {
         val rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1")
         val apiKey = settings.getString("apiKey", "")
         val model = settings.getString("model", "gpt-4o-mini")
-        val toLang = to ?: settings.getString("defaultLanguage", "zh")
-        val fromLang = from ?: "Auto"
+        val toLang = if (!to.isNullOrBlank()) to else settings.getString("defaultLanguage", "中文")
+        val fromLang = if (!from.isNullOrBlank()) from else "自动识别"
 
         if (apiKey.isBlank()) {
             return TranslateErrorData(
@@ -228,7 +228,9 @@ class AITranslate : Plugin() {
 
         return try {
             val apiUrl = formatChatUrl(rawUrl)
-            val systemPrompt = "You are a professional translator. Translate the given text directly to target language: $toLang. Output only the pure translated result without explanations or quotes."
+            val systemPrompt = "You are a professional translator. Directly translate the following text into '$toLang'. " +
+                    "Do not output explanations, conversational filler, quotation marks, or notes. " +
+                    "Only output the pure translated content."
 
             val jsonBody = JSONObject().apply {
                 put("model", model)
@@ -244,7 +246,7 @@ class AITranslate : Plugin() {
                 .executeWithBody(jsonBody.toString())
 
             if (!req.ok()) {
-                val errorBody = try { req.text() } catch (e: Exception) { "无法读取错误响应" }
+                val errorBody = try { req.text() } catch (e: Exception) { "无法读取响应内容" }
                 return TranslateErrorData(
                     errorCode = req.statusCode,
                     errorText = "API 报错: $errorBody"
