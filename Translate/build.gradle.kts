@@ -1,8 +1,11 @@
 version = "1.0.0"
-description = "使用自定义 AI API（兼容 OpenAI 格式）翻译消息。"
-aliucord.changelog.set("""
-    # Version 1.0.0
-    * 初始版本发布
-    * 支持自定义 Base URL、API Key 与 Model
-    * 支持长按消息快捷翻译与 /translate 指令
-""".trimIndent())
+description = "Translate Discord messages using any OpenAI/DeepSeek compatible LLM API."
+
+aliucord {
+    author("lishangaaa", 0L)
+    changelog.set("""
+        # Version 1.0.0
+        * Initial release: Customizable AI translation powered by LLM endpoints.
+        * Support natural language target styles and fast context-menu translation.
+    """.trimIndent())
+}
