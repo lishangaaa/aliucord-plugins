@@ -2,7 +2,7 @@
   "AITranslate": {
     "version": "1.0.4",
     "description": "Translate Discord messages using any OpenAI/DeepSeek compatible LLM API.",
-    "changelog": "# Version 1.0.0\n* Initial release: Customizable AI translation powered by LLM endpoints.",
+    "changelog": "# Version 1.0.4\n* 优化精简了一下插件",
     "author": "lishangaaa, Tyman",
     "source": "https://raw.githubusercontent.com/lishangaaa/aliucord-plugins/builds/AITranslate.zip"
   }
