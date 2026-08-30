@@ -30,6 +30,7 @@ import com.facebook.drawee.span.DraweeSpanStringBuilder
 import com.lytefast.flexinput.R
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.util.WeakHashMap
 import java.util.regex.Pattern
@@ -38,7 +39,7 @@ import java.util.regex.Pattern
 class AITranslate : Plugin() {
     lateinit var pluginIcon: Drawable
     private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
-    // 增加 DOTALL 匹配模式，确保多行消息不会被错误截断
+    private val messageViewMap = mutableMapOf<Long, WeakReference<SimpleDraweeSpanTextView>>()
     private val messageLoggerEditedRegex = Pattern.compile("(?s)(?:.+ \\(.+: .+\\)\\n)+([\\s\\S]+)$")
     private val actionsMessageMap = WeakHashMap<WidgetChatListActions, Message>()
     private var draweeField: Field? = null
@@ -93,7 +94,6 @@ class AITranslate : Plugin() {
                     Utils.createCommandOption(ApplicationCommandType.BOOLEAN, "send", "是否直接发送到聊天中 (默认 true)")
                 )
             ) { ctx ->
-                // 放宽主线程网络限制以兼容同步返回结果
                 val policy = StrictMode.getThreadPolicy()
                 StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().permitAll().build())
                 val translateData = try {
@@ -168,6 +168,22 @@ class AITranslate : Plugin() {
         }
     }
 
+    private fun updateViewDirectly(messageId: Long, successData: TranslateSuccessData?) {
+        try {
+            val tv = messageViewMap[messageId]?.get() ?: return
+            val field = findDraweeField() ?: return
+            val builder = field.get(tv) as? DraweeSpanStringBuilder ?: return
+            if (successData != null && !successData.showingOriginal) {
+                builder.setTranslated(successData, tv.context)
+            } else {
+                builder.clear()
+                builder.append(successData?.sourceText ?: "")
+            }
+            tv.setDraweeSpanStringBuilder(builder)
+            tv.invalidate()
+        } catch (_: Throwable) {}
+    }
+
     private fun patchProcessMessageText() {
         try {
             findDraweeField()
@@ -183,8 +199,10 @@ class AITranslate : Plugin() {
                         val id = message.id
                         val textView = it.args[0] as? SimpleDraweeSpanTextView ?: return@Hook
 
+                        messageViewMap[id] = WeakReference(textView)
+
                         val translateData = translatedMessages[id] ?: return@Hook
-                        if (translateData.showingOriginal) return@Hook // 显示原文时直接跳过，保持原生富文本
+                        if (translateData.showingOriginal) return@Hook
 
                         val field = findDraweeField() ?: return@Hook
                         val builder = field.get(textView) as? DraweeSpanStringBuilder ?: return@Hook
@@ -242,6 +260,7 @@ class AITranslate : Plugin() {
                                             Utils.showToast("${err.errorText} (${err.errorCode})", true)
                                         } else {
                                             translatedMessages[message.id] = response
+                                            updateViewDirectly(message.id, response)
                                             refreshAdapterForMessage(message.id)
                                             Utils.showToast("已完成 AI 翻译")
                                         }
@@ -251,6 +270,7 @@ class AITranslate : Plugin() {
                             }
                         } else {
                             currentEntry.showingOriginal = !currentEntry.showingOriginal
+                            updateViewDirectly(message.id, currentEntry)
                             refreshAdapterForMessage(message.id)
                             menu.dismiss()
                         }
@@ -363,9 +383,10 @@ class AITranslate : Plugin() {
             if (rawTranslated.isEmpty()) {
                 val reasoning = messageObj?.optString("reasoning_content", "") ?: ""
                 if (reasoning.isNotEmpty()) {
-                    return TranslateErrorData(500, "模型仅输出了思考过程，未生成翻译正文")
+                    rawTranslated = reasoning
+                } else {
+                    return TranslateErrorData(500, "API 返回文本为空")
                 }
-                return TranslateErrorData(500, "API 返回文本为空")
             }
 
             TranslateSuccessData(
