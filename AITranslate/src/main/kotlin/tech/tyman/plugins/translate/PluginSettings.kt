@@ -7,12 +7,11 @@ import com.aliucord.Http
 import com.aliucord.Utils
 import com.aliucord.api.SettingsAPI
 import com.aliucord.fragments.SettingsPage
+import com.aliucord.utils.GsonUtils
 import com.aliucord.views.Button
 import com.aliucord.views.TextInput
 import com.discord.utilities.color.ColorCompat
 import com.lytefast.flexinput.R
-import org.json.JSONArray
-import org.json.JSONObject
 
 class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
     override fun onViewBound(view: View?) {
@@ -43,7 +42,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         val fetchModelsButton = Button(ctx).apply {
             text = "获取模型列表"
             setOnClickListener {
-                val rawUrl = urlInput.editText.text.toString().trim()
+                val rawUrl = urlInput.editText.text.toString().trim().trimEnd('/')
                 val apiKey = keyInput.editText.text.toString().trim()
 
                 if (apiKey.isEmpty()) {
@@ -54,8 +53,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 Utils.showToast("正在拉取模型...")
                 Utils.threadPool.execute {
                     try {
-                        val trimmedUrl = rawUrl.trimEnd('/')
-                        val modelsUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/models" else "$trimmedUrl/v1/models"
+                        val modelsUrl = if (rawUrl.endsWith("/v1")) "$rawUrl/models" else "$rawUrl/v1/models"
                         val res = Http.Request(modelsUrl, "GET")
                             .setHeader("Authorization", "Bearer $apiKey")
                             .execute()
@@ -65,15 +63,8 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                             return@execute
                         }
 
-                        val dataArray = JSONObject(res.text()).optJSONArray("data") ?: JSONArray()
-                        val modelNames = ArrayList<String>()
-                        for (i in 0 until dataArray.length()) {
-                            val id = dataArray.optJSONObject(i)?.optString("id")
-                            if (!id.isNullOrEmpty()) {
-                                modelNames.add(id)
-                            }
-                        }
-                        modelNames.sort()
+                        val modelResp = GsonUtils.fromJson(res.text(), OpenAIModelsResponse::class.java)
+                        val modelNames = modelResp?.data?.map { it.id }?.sorted() ?: emptyList()
 
                         Utils.mainThread.post {
                             val act = activity ?: Utils.appActivity ?: return@post
@@ -99,7 +90,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         val testButton = Button(ctx).apply {
             text = "测试连接"
             setOnClickListener {
-                val rawUrl = urlInput.editText.text.toString().trim()
+                val rawUrl = urlInput.editText.text.toString().trim().trimEnd('/')
                 val apiKey = keyInput.editText.text.toString().trim()
                 val model = modelInput.editText.text.toString().trim()
 
@@ -111,19 +102,18 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 Utils.showToast("正在测试连通性...")
                 Utils.threadPool.execute {
                     val start = System.currentTimeMillis()
-                    val trimmedUrl = rawUrl.trimEnd('/')
-                    val chatUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/chat/completions" else "$trimmedUrl/v1/chat/completions"
+                    val chatUrl = if (rawUrl.endsWith("/v1")) "$rawUrl/chat/completions" else "$rawUrl/v1/chat/completions"
                     try {
-                        val body = JSONObject().apply {
-                            put("model", model)
-                            put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "hi")))
-                            put("max_tokens", 5)
-                        }
+                        val testPayload = OpenAIChatRequest(
+                            model = model,
+                            messages = listOf(OpenAIMessage("user", "hi")),
+                            max_tokens = 5
+                        )
 
                         val res = Http.Request(chatUrl, "POST")
                             .setHeader("Authorization", "Bearer $apiKey")
                             .setHeader("Content-Type", "application/json")
-                            .executeWithBody(body.toString())
+                            .executeWithBody(GsonUtils.toJson(testPayload))
 
                         val cost = System.currentTimeMillis() - start
                         Utils.mainThread.post {
