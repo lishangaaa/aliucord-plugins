@@ -9,14 +9,12 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.RecyclerView
 import com.aliucord.Http
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.api.CommandsAPI
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
-import com.aliucord.utils.ReflectUtils
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.models.message.Message
 import com.discord.utilities.color.ColorCompat
@@ -34,7 +32,7 @@ import java.lang.ref.WeakReference
 class AITranslate : Plugin() {
     private var pluginIcon: Drawable? = null
     private val translatedMessages = mutableMapOf<Long, TranslateSuccess>()
-    private var currentChatAdapter: WeakReference<RecyclerView.Adapter<*>>? = null
+    private val messageViewMap = mutableMapOf<Long, WeakReference<SimpleDraweeSpanTextView>>()
 
     companion object {
         private const val TRANSLATE_BTN_TAG = "aliucord_ai_translate_btn"
@@ -90,15 +88,11 @@ class AITranslate : Plugin() {
             SimpleDraweeSpanTextView::class.java,
             MessageEntry::class.java
         ) { param ->
-            (ReflectUtils.getField(this, "adapter") as? RecyclerView.Adapter<*>)?.let { adapter ->
-                if (currentChatAdapter?.get() !== adapter) {
-                    currentChatAdapter = WeakReference(adapter)
-                }
-            }
-
             val textView = param.args[0] as? SimpleDraweeSpanTextView ?: return@after
             val messageEntry = param.args[1] as? MessageEntry ?: return@after
             val message = messageEntry.message ?: return@after
+
+            messageViewMap[message.id] = WeakReference(textView)
 
             val data = translatedMessages[message.id] ?: return@after
             if (!data.showingOriginal) {
@@ -151,7 +145,9 @@ class AITranslate : Plugin() {
                     Utils.mainThread.post {
                         if (res is TranslateSuccess) {
                             translatedMessages[message.id] = res
-                            notifyAdapterChanged()
+                            messageViewMap[message.id]?.get()?.let { tv ->
+                                renderTranslatedText(tv, res)
+                            }
                             Utils.showToast("翻译完成")
                         } else if (res is TranslateError) {
                             Utils.showToast("${res.errorText} (${res.errorCode})", true)
@@ -161,7 +157,15 @@ class AITranslate : Plugin() {
                 }
             } else {
                 current.showingOriginal = !current.showingOriginal
-                notifyAdapterChanged()
+                messageViewMap[message.id]?.get()?.let { tv ->
+                    if (current.showingOriginal) {
+                        val originalBuilder = DraweeSpanStringBuilder().apply { append(current.sourceText) }
+                        tv.setDraweeSpanStringBuilder(originalBuilder)
+                        tv.text = originalBuilder
+                    } else {
+                        renderTranslatedText(tv, current)
+                    }
+                }
                 menu.dismiss()
             }
         }
@@ -182,12 +186,6 @@ class AITranslate : Plugin() {
         textView.text = builder
     }
 
-    private fun notifyAdapterChanged() {
-        Utils.mainThread.post {
-            currentChatAdapter?.get()?.notifyDataSetChanged()
-        }
-    }
-
     private fun findFirstVerticalLayout(view: ViewGroup): LinearLayout? {
         if (view is LinearLayout && view.orientation == LinearLayout.VERTICAL) return view
         var i = 0
@@ -205,7 +203,7 @@ class AITranslate : Plugin() {
     override fun stop(context: Context?) {
         patcher.unpatchAll()
         translatedMessages.clear()
-        currentChatAdapter = null
+        messageViewMap.clear()
     }
 
     private fun requestTranslation(text: String, from: String? = null, to: String? = null): TranslateResult {
@@ -224,7 +222,7 @@ class AITranslate : Plugin() {
 
         return try {
             val apiUrl = if (rawUrl.endsWith("/v1")) "$rawUrl/chat/completions" else "$rawUrl/v1/chat/completions"
-            
+
             val payload = JSONObject().apply {
                 put("model", model)
                 put("messages", JSONArray().apply {
