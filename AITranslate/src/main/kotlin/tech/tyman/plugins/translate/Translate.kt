@@ -17,6 +17,7 @@ import com.aliucord.api.CommandsAPI
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.utils.GsonUtils
+import com.aliucord.utils.ReflectUtils
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.models.message.Message
 import com.discord.utilities.color.ColorCompat
@@ -32,6 +33,8 @@ import java.lang.ref.WeakReference
 class AITranslate : Plugin() {
     private var pluginIcon: Drawable? = null
     private val translatedMessages = mutableMapOf<Long, TranslateSuccess>()
+    
+    // 弱引用存储聊天界面的 Adapter
     private var currentChatAdapter: WeakReference<RecyclerView.Adapter<*>>? = null
 
     companion object {
@@ -88,6 +91,13 @@ class AITranslate : Plugin() {
             SimpleDraweeSpanTextView::class.java,
             MessageEntry::class.java
         ) { param ->
+            // 利用 ReflectUtils 提取当前绑定的 Adapter 并做弱引用存储
+            (ReflectUtils.getField(this, "adapter") as? RecyclerView.Adapter<*>)?.let { adapter ->
+                if (currentChatAdapter?.get() !== adapter) {
+                    currentChatAdapter = WeakReference(adapter)
+                }
+            }
+
             val textView = param.args[0] as? SimpleDraweeSpanTextView ?: return@after
             val messageEntry = param.args[1] as? MessageEntry ?: return@after
             val message = messageEntry.message ?: return@after
@@ -106,7 +116,6 @@ class AITranslate : Plugin() {
             val message = model.message ?: return@after
             val rootView = menu.view as? ViewGroup ?: return@after
 
-            // 使用 Utils.getResId 获取原生容器 ID，若找不到则自动降级遍历查找
             val layoutId = Utils.getResId("dialog_chat_actions_list", "id")
             val container = (if (layoutId != 0) rootView.findViewById<LinearLayout>(layoutId) else null)
                 ?: findFirstVerticalLayout(rootView)
@@ -176,10 +185,9 @@ class AITranslate : Plugin() {
     }
 
     private fun notifyAdapterChanged() {
-        currentChatAdapter?.get()?.notifyDataSetChanged()
-            ?: Utils.appActivity?.let { act ->
-                act.window?.decorView?.postInvalidate()
-            }
+        Utils.mainThread.post {
+            currentChatAdapter?.get()?.notifyDataSetChanged()
+        }
     }
 
     private fun findFirstVerticalLayout(view: ViewGroup): LinearLayout? {
