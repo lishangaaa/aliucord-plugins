@@ -2,22 +2,19 @@ package com.lishangaaa.plugins.aitranslate
 
 import android.content.Context
 import android.graphics.drawable.Drawable
-import android.os.Bundle
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
-import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.RecyclerView
 import com.aliucord.Http
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.api.CommandsAPI
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.Hook
+import com.aliucord.patcher.after
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.models.message.Message
 import com.discord.utilities.color.ColorCompat
@@ -30,18 +27,15 @@ import com.lytefast.flexinput.R
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import java.util.ArrayDeque
-import java.util.WeakHashMap
 
 @AliucordPlugin
 class AITranslate : Plugin() {
     private var pluginIcon: Drawable? = null
-    private val translatedMessages = mutableMapOf<Long, TranslateSuccessData>()
+    private val translatedMessages = mutableMapOf<Long, TranslateSuccess>()
     private val messageViewMap = mutableMapOf<Long, WeakReference<SimpleDraweeSpanTextView>>()
-    private val actionsMessageMap = WeakHashMap<WidgetChatListActions, Message>()
 
     companion object {
-        private const val TRANSLATE_BTN_TAG = "aliucord_ai_translate_btn_tag"
+        private const val TRANSLATE_BTN_TAG = "aliucord_ai_translate_btn"
     }
 
     init {
@@ -53,9 +47,12 @@ class AITranslate : Plugin() {
     }
 
     override fun start(context: Context) {
+        patchChatListRenderer()
         patchMessageContextMenu()
-        patchProcessMessageText()
+        registerSlashCommands()
+    }
 
+    private fun registerSlashCommands() {
         commands.registerCommand(
             "translate",
             "使用 AI API 翻译文本",
@@ -70,13 +67,13 @@ class AITranslate : Plugin() {
             val to = ctx.getString("to")
             val from = ctx.getString("from")
 
-            when (val res = translateMessage(text, from, to)) {
-                is TranslateSuccessData -> CommandsAPI.CommandResult(
+            when (val res = requestTranslation(text, from, to)) {
+                is TranslateSuccess -> CommandsAPI.CommandResult(
                     res.translatedText,
                     null,
                     ctx.getBoolOrDefault("send", true)
                 )
-                is TranslateErrorData -> CommandsAPI.CommandResult(
+                is TranslateError -> CommandsAPI.CommandResult(
                     "${res.errorText} (${res.errorCode})",
                     null,
                     false
@@ -85,126 +82,75 @@ class AITranslate : Plugin() {
         }
     }
 
-    private fun renderTranslatedText(textView: SimpleDraweeSpanTextView, data: TranslateSuccessData) {
-        val builder = DraweeSpanStringBuilder()
-        builder.append(data.translatedText)
-        val start = builder.length
-        builder.append(" (AI -> ${data.translatedLanguage})")
-        builder.setSpan(RelativeSizeSpan(0.75f), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        try {
-            val mutedColor = ColorCompat.getThemedColor(textView.context, R.b.colorTextMuted)
-            builder.setSpan(ForegroundColorSpan(mutedColor), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        } catch (_: Throwable) {}
-
-        textView.setDraweeSpanStringBuilder(builder)
-        textView.text = builder
-    }
-
-    private fun refreshChatList() {
-        Utils.mainThread.post {
-            val activity = Utils.appActivity ?: return@post
-            val decor = activity.window?.decorView ?: return@post
-            findRecyclerViews(decor).forEach { rv ->
-                rv.adapter?.notifyDataSetChanged()
-            }
-        }
-    }
-
-    private fun findRecyclerViews(root: View): List<RecyclerView> {
-        val list = ArrayList<RecyclerView>()
-        val queue = ArrayDeque<View>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val v = queue.removeFirst()
-            if (v is RecyclerView) {
-                list.add(v)
-            } else if (v is ViewGroup) {
-                for (i in 0 until v.childCount) {
-                    queue.add(v.getChildAt(i))
-                }
-            }
-        }
-        return list
-    }
-
-    private fun patchProcessMessageText() {
-        patcher.patch(
-            WidgetChatListAdapterItemMessage::class.java,
+    private fun patchChatListRenderer() {
+        patcher.after<WidgetChatListAdapterItemMessage>(
             "processMessageText",
-            arrayOf(SimpleDraweeSpanTextView::class.java, MessageEntry::class.java),
-            Hook {
-                val messageEntry = it.args[1] as? MessageEntry ?: return@Hook
-                val message = messageEntry.message ?: return@Hook
-                val textView = it.args[0] as? SimpleDraweeSpanTextView ?: return@Hook
+            SimpleDraweeSpanTextView::class.java,
+            MessageEntry::class.java
+        ) { param ->
+            val textView = param.args[0] as? SimpleDraweeSpanTextView ?: return@after
+            val messageEntry = param.args[1] as? MessageEntry ?: return@after
+            val message = messageEntry.message ?: return@after
 
-                messageViewMap[message.id] = WeakReference(textView)
+            messageViewMap[message.id] = WeakReference(textView)
 
-                val data = translatedMessages[message.id] ?: return@Hook
-                if (!data.showingOriginal) {
-                    renderTranslatedText(textView, data)
-                }
+            val data = translatedMessages[message.id] ?: return@after
+            if (!data.showingOriginal) {
+                renderTranslatedText(textView, data)
             }
-        )
+        }
     }
 
     private fun patchMessageContextMenu() {
-        val messageContextMenu = WidgetChatListActions::class.java
+        patcher.after<WidgetChatListActions>("configureUI", WidgetChatListActions.Model::class.java) { param ->
+            val menu = this
+            val model = param.args[0] as? WidgetChatListActions.Model ?: return@after
+            val message = model.message ?: return@after
+            val rootView = menu.view as? ViewGroup ?: return@after
 
-        patcher.patch(messageContextMenu.getDeclaredMethod("configureUI", WidgetChatListActions.Model::class.java), Hook {
-            val menu = it.thisObject as? WidgetChatListActions ?: return@Hook
-            val model = it.args[0] as? WidgetChatListActions.Model ?: return@Hook
-            val message = model.message ?: return@Hook
-            actionsMessageMap[menu] = message
+            val layoutId = Utils.getResId("dialog_chat_actions_list", "id")
+            val container = (if (layoutId != 0) rootView.findViewById<LinearLayout>(layoutId) else null)
+                ?: findFirstVerticalLayout(rootView)
+                ?: return@after
 
-            val rootView = menu.view ?: return@Hook
-            val button = rootView.findViewWithTag<TextView>(TRANSLATE_BTN_TAG) ?: return@Hook
-            updateMenuButton(button, menu, message)
-        })
-
-        patcher.patch(messageContextMenu, "onViewCreated", arrayOf(View::class.java, Bundle::class.java), Hook {
-            val menu = it.thisObject as? WidgetChatListActions ?: return@Hook
-            val rootView = it.args[0] as? View ?: return@Hook
-            val targetLayout = findVerticalLayout(rootView) ?: return@Hook
-
-            var button = targetLayout.findViewWithTag<TextView>(TRANSLATE_BTN_TAG)
+            var button = container.findViewWithTag<TextView>(TRANSLATE_BTN_TAG)
             if (button == null) {
-                button = TextView(targetLayout.context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
+                button = TextView(container.context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
                     tag = TRANSLATE_BTN_TAG
                     pluginIcon?.let { icon -> setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null) }
                 }
-                targetLayout.addView(button)
+                container.addView(button)
             }
 
-            actionsMessageMap[menu]?.let { msg ->
-                updateMenuButton(button, menu, msg)
-            }
-        })
+            bindMenuButton(button, menu, message)
+        }
     }
 
-    private fun updateMenuButton(button: TextView, menu: WidgetChatListActions, message: Message) {
+    private fun bindMenuButton(button: TextView, menu: WidgetChatListActions, message: Message) {
         val entry = translatedMessages[message.id]
         button.text = if (entry == null || entry.showingOriginal) "AI 翻译此消息" else "显示原始消息"
+
         button.setOnClickListener {
             val current = translatedMessages[message.id]
             if (current == null) {
-                val content = message.content?.toString()
-                if (content.isNullOrEmpty() || content.trim().isEmpty()) {
+                val content = message.content?.toString()?.trim() ?: ""
+                if (content.isEmpty()) {
                     Utils.showToast("该消息无文本内容", true)
                     return@setOnClickListener
                 }
+
                 Utils.showToast("正在翻译...")
                 Utils.threadPool.execute {
-                    val response = translateMessage(content)
+                    val res = requestTranslation(content)
                     Utils.mainThread.post {
-                        if (response is TranslateSuccessData) {
-                            translatedMessages[message.id] = response
+                        if (res is TranslateSuccess) {
+                            translatedMessages[message.id] = res
                             messageViewMap[message.id]?.get()?.let { tv ->
-                                renderTranslatedText(tv, response)
+                                renderTranslatedText(tv, res)
                             }
-                            refreshChatList()
                             Utils.showToast("翻译完成")
-                        } else if (response is TranslateErrorData) {
-                            Utils.showToast("${response.errorText} (${response.errorCode})", true)
+                        } else if (res is TranslateError) {
+                            Utils.showToast("${res.errorText} (${res.errorCode})", true)
                         }
                         menu.dismiss()
                     }
@@ -220,68 +166,105 @@ class AITranslate : Plugin() {
                         renderTranslatedText(tv, current)
                     }
                 }
-                refreshChatList()
                 menu.dismiss()
             }
         }
     }
 
-    private fun findVerticalLayout(view: View): LinearLayout? {
+    private fun renderTranslatedText(textView: SimpleDraweeSpanTextView, data: TranslateSuccess) {
+        val builder = DraweeSpanStringBuilder().apply {
+            append(data.translatedText)
+            val start = length
+            append(" (AI -> ${data.translatedLanguage})")
+            setSpan(RelativeSizeSpan(0.75f), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            try {
+                val mutedColor = ColorCompat.getThemedColor(textView.context, R.b.colorTextMuted)
+                setSpan(ForegroundColorSpan(mutedColor), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } catch (_: Throwable) {}
+        }
+        textView.setDraweeSpanStringBuilder(builder)
+        textView.text = builder
+    }
+
+    private fun findFirstVerticalLayout(view: ViewGroup): LinearLayout? {
         if (view is LinearLayout && view.orientation == LinearLayout.VERTICAL) return view
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                val found = findVerticalLayout(view.getChildAt(i))
-                if (found != null) return found
+        var i = 0
+        while (i < view.childCount) {
+            val child = view.getChildAt(i)
+            if (child is ViewGroup) {
+                val res = findFirstVerticalLayout(child)
+                if (res != null) return res
             }
+            i++
         }
         return null
     }
 
-    override fun stop(context: Context?) = patcher.unpatchAll()
+    override fun stop(context: Context?) {
+        patcher.unpatchAll()
+        translatedMessages.clear()
+        messageViewMap.clear()
+    }
 
-    private fun translateMessage(text: String, from: String? = null, to: String? = null): TranslateData {
-        val rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1")
-        val apiKey = settings.getString("apiKey", "")
-        val model = settings.getString("model", "gpt-4o-mini")
-        val toLang = if (to != null && to.trim().isNotEmpty()) to else settings.getString("defaultLanguage", "中文")
-        val fromLang = if (from != null && from.trim().isNotEmpty()) from else "自动识别"
+    private fun requestTranslation(text: String, from: String? = null, to: String? = null): TranslateResult {
+        var rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1").trim()
+        while (rawUrl.endsWith("/")) {
+            rawUrl = rawUrl.substring(0, rawUrl.length - 1)
+        }
+        val apiKey = settings.getString("apiKey", "").trim()
+        val model = settings.getString("model", "gpt-4o-mini").trim()
+        val toLang = if (to != null && to.trim().isNotEmpty()) to.trim() else settings.getString("defaultLanguage", "中文").trim()
+        val fromLang = if (from != null && from.trim().isNotEmpty()) from.trim() else "自动识别"
 
-        if (apiKey.trim().isEmpty()) {
-            return TranslateErrorData(401, "请先在插件设置中填写 API Key")
+        if (apiKey.isEmpty()) {
+            return TranslateError(401, "请先在插件设置中填写 API Key")
         }
 
         return try {
-            val trimmedUrl = rawUrl.trimEnd('/')
-            val apiUrl = if (trimmedUrl.endsWith("/v1")) "$trimmedUrl/chat/completions" else "$trimmedUrl/v1/chat/completions"
-            val body = JSONObject().apply {
+            val apiUrl = if (rawUrl.endsWith("/v1")) "$rawUrl/chat/completions" else "$rawUrl/v1/chat/completions"
+
+            val payload = JSONObject().apply {
                 put("model", model)
                 put("messages", JSONArray().apply {
-                    put(JSONObject().put("role", "system").put("content", "You are a professional translator. Directly translate to '$toLang'. Only output translation."))
-                    put(JSONObject().put("role", "user").put("content", text))
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", "You are a professional translator. Directly translate to '$toLang'. Only output translation.")
+                    })
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", text)
+                    })
                 })
             }
 
             val req = Http.Request(apiUrl, "POST")
                 .setHeader("Authorization", "Bearer $apiKey")
                 .setHeader("Content-Type", "application/json")
-                .executeWithBody(body.toString())
+                .executeWithBody(payload.toString())
 
-            if (!req.ok()) return TranslateErrorData(req.statusCode, "API 报错")
+            if (!req.ok()) {
+                return TranslateError(req.statusCode, "API 报错 (${req.statusCode})")
+            }
 
-            val choices = JSONObject(req.text()).optJSONArray("choices")
-                ?: return TranslateErrorData(500, "API 返回数据为空")
+            val resp = JSONObject(req.text())
+            val choices = resp.optJSONArray("choices")
+                ?: return TranslateError(500, "API 返回数据 choices 为空")
 
-            val messageObj = choices.optJSONObject(0)?.optJSONObject("message")
+            val firstChoice = choices.optJSONObject(0)
+            val messageObj = firstChoice?.optJSONObject("message")
             var content = messageObj?.optString("content", "") ?: ""
             if (content.isEmpty()) {
                 content = messageObj?.optString("reasoning_content", "") ?: ""
             }
 
-            if (content.trim().isEmpty()) return TranslateErrorData(500, "翻译内容为空")
+            val resultText = content.trim()
+            if (resultText.isEmpty()) {
+                return TranslateError(500, "翻译结果为空")
+            }
 
-            TranslateSuccessData(fromLang, toLang, text, content.trim())
-        } catch (e: Exception) {
-            TranslateErrorData(500, "请求失败: ${e.message}")
+            TranslateSuccess(fromLang, toLang, text, resultText)
+        } catch (e: Throwable) {
+            TranslateError(500, "网络或解析异常: ${e.message}")
         }
     }
 }
