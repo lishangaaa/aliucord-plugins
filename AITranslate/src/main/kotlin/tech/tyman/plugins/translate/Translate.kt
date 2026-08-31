@@ -17,7 +17,6 @@ import com.aliucord.api.CommandsAPI
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.utils.GsonUtils
-import com.aliucord.utils.ViewUtils
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.models.message.Message
 import com.discord.utilities.color.ColorCompat
@@ -33,8 +32,6 @@ import java.lang.ref.WeakReference
 class AITranslate : Plugin() {
     private var pluginIcon: Drawable? = null
     private val translatedMessages = mutableMapOf<Long, TranslateSuccess>()
-    
-    // 弱引用保存当前活跃的聊天列表 Adapter，用于刷新单个/全部消息视图，避免遍历 View 树
     private var currentChatAdapter: WeakReference<RecyclerView.Adapter<*>>? = null
 
     companion object {
@@ -86,7 +83,6 @@ class AITranslate : Plugin() {
     }
 
     private fun patchChatListRenderer() {
-        // 使用 Aliucord 的 PatcherExtensionsKt 语法糖
         patcher.after<WidgetChatListAdapterItemMessage>(
             "processMessageText",
             SimpleDraweeSpanTextView::class.java,
@@ -96,7 +92,6 @@ class AITranslate : Plugin() {
             val messageEntry = param.args[1] as? MessageEntry ?: return@after
             val message = messageEntry.message ?: return@after
 
-            // 拦截并渲染已翻译的内容
             val data = translatedMessages[message.id] ?: return@after
             if (!data.showingOriginal) {
                 renderTranslatedText(textView, data)
@@ -105,15 +100,15 @@ class AITranslate : Plugin() {
     }
 
     private fun patchMessageContextMenu() {
-        // 单 Hook 处理菜单，移除冗余的 onViewCreated 和 actionsMessageMap
         patcher.after<WidgetChatListActions>("configureUI", WidgetChatListActions.Model::class.java) { param ->
-            val menu = this // WidgetChatListActions 实例
+            val menu = this
             val model = param.args[0] as? WidgetChatListActions.Model ?: return@after
             val message = model.message ?: return@after
             val rootView = menu.view as? ViewGroup ?: return@after
 
-            // 查找或定位到菜单容器
-            val container = ViewUtils.findViewById<LinearLayout>(rootView, "dialog_chat_actions_list")
+            // 使用 Utils.getResId 获取原生容器 ID，若找不到则自动降级遍历查找
+            val layoutId = Utils.getResId("dialog_chat_actions_list", "id")
+            val container = (if (layoutId != 0) rootView.findViewById<LinearLayout>(layoutId) else null)
                 ?: findFirstVerticalLayout(rootView)
                 ?: return@after
 
@@ -181,7 +176,6 @@ class AITranslate : Plugin() {
     }
 
     private fun notifyAdapterChanged() {
-        // 安全刷新当前界面的列表绑定，无卡顿且不泄露 View
         currentChatAdapter?.get()?.notifyDataSetChanged()
             ?: Utils.appActivity?.let { act ->
                 act.window?.decorView?.postInvalidate()
