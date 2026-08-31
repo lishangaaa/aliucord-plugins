@@ -16,7 +16,6 @@ import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.api.CommandsAPI
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
-import com.aliucord.utils.GsonUtils
 import com.aliucord.utils.ReflectUtils
 import com.discord.api.commands.ApplicationCommandType
 import com.discord.models.message.Message
@@ -27,14 +26,14 @@ import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.entries.MessageEntry
 import com.facebook.drawee.span.DraweeSpanStringBuilder
 import com.lytefast.flexinput.R
+import org.json.JSONArray
+import org.json.JSONObject
 import java.lang.ref.WeakReference
 
 @AliucordPlugin
 class AITranslate : Plugin() {
     private var pluginIcon: Drawable? = null
     private val translatedMessages = mutableMapOf<Long, TranslateSuccess>()
-    
-    // 弱引用存储聊天界面的 Adapter
     private var currentChatAdapter: WeakReference<RecyclerView.Adapter<*>>? = null
 
     companion object {
@@ -91,7 +90,6 @@ class AITranslate : Plugin() {
             SimpleDraweeSpanTextView::class.java,
             MessageEntry::class.java
         ) { param ->
-            // 利用 ReflectUtils 提取当前绑定的 Adapter 并做弱引用存储
             (ReflectUtils.getField(this, "adapter") as? RecyclerView.Adapter<*>)?.let { adapter ->
                 if (currentChatAdapter?.get() !== adapter) {
                     currentChatAdapter = WeakReference(adapter)
@@ -141,8 +139,8 @@ class AITranslate : Plugin() {
         button.setOnClickListener {
             val current = translatedMessages[message.id]
             if (current == null) {
-                val content = message.content?.toString()?.trim()
-                if (content.isNullOrEmpty()) {
+                val content = message.content?.toString()?.trim() ?: ""
+                if (content.isEmpty()) {
                     Utils.showToast("该消息无文本内容", true)
                     return@setOnClickListener
                 }
@@ -192,12 +190,14 @@ class AITranslate : Plugin() {
 
     private fun findFirstVerticalLayout(view: ViewGroup): LinearLayout? {
         if (view is LinearLayout && view.orientation == LinearLayout.VERTICAL) return view
-        for (i in 0 until view.childCount) {
+        var i = 0
+        while (i < view.childCount) {
             val child = view.getChildAt(i)
             if (child is ViewGroup) {
                 val res = findFirstVerticalLayout(child)
                 if (res != null) return res
             }
+            i++
         }
         return null
     }
@@ -209,11 +209,14 @@ class AITranslate : Plugin() {
     }
 
     private fun requestTranslation(text: String, from: String? = null, to: String? = null): TranslateResult {
-        val rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1").trimEnd('/')
+        var rawUrl = settings.getString("apiUrl", "https://api.openai.com/v1").trim()
+        while (rawUrl.endsWith("/")) {
+            rawUrl = rawUrl.substring(0, rawUrl.length - 1)
+        }
         val apiKey = settings.getString("apiKey", "").trim()
         val model = settings.getString("model", "gpt-4o-mini").trim()
-        val toLang = if (!to.isNullOrBlank()) to else settings.getString("defaultLanguage", "中文")
-        val fromLang = if (!from.isNullOrBlank()) from else "自动识别"
+        val toLang = if (to != null && to.trim().isNotEmpty()) to.trim() else settings.getString("defaultLanguage", "中文").trim()
+        val fromLang = if (from != null && from.trim().isNotEmpty()) from.trim() else "自动识别"
 
         if (apiKey.isEmpty()) {
             return TranslateError(401, "请先在插件设置中填写 API Key")
@@ -221,29 +224,48 @@ class AITranslate : Plugin() {
 
         return try {
             val apiUrl = if (rawUrl.endsWith("/v1")) "$rawUrl/chat/completions" else "$rawUrl/v1/chat/completions"
-            val payload = OpenAIChatRequest(
-                model = model,
-                messages = listOf(
-                    OpenAIMessage("system", "You are a professional translator. Directly translate to '$toLang'. Only output translation."),
-                    OpenAIMessage("user", text)
-                )
-            )
+            
+            val payload = JSONObject().apply {
+                put("model", model)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", "You are a professional translator. Directly translate to '$toLang'. Only output translation.")
+                    })
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", text)
+                    })
+                })
+            }
 
             val req = Http.Request(apiUrl, "POST")
                 .setHeader("Authorization", "Bearer $apiKey")
                 .setHeader("Content-Type", "application/json")
-                .executeWithBody(GsonUtils.toJson(payload))
+                .executeWithBody(payload.toString())
 
-            if (!req.ok()) return TranslateError(req.statusCode, "API 报错: ${req.text()}")
+            if (!req.ok()) {
+                return TranslateError(req.statusCode, "API 报错 (${req.statusCode})")
+            }
 
-            val resp = GsonUtils.fromJson(req.text(), OpenAIChatResponse::class.java)
-            val messageObj = resp?.choices?.firstOrNull()?.message
-            val content = messageObj?.content?.ifEmpty { messageObj.reasoning_content } ?: ""
+            val resp = JSONObject(req.text())
+            val choices = resp.optJSONArray("choices")
+                ?: return TranslateError(500, "API 返回数据 choices 为空")
 
-            if (content.isBlank()) return TranslateError(500, "翻译结果为空")
+            val firstChoice = choices.optJSONObject(0)
+            val messageObj = firstChoice?.optJSONObject("message")
+            var content = messageObj?.optString("content", "") ?: ""
+            if (content.isEmpty()) {
+                content = messageObj?.optString("reasoning_content", "") ?: ""
+            }
 
-            TranslateSuccess(fromLang, toLang, text, content.trim())
-        } catch (e: Exception) {
+            val resultText = content.trim()
+            if (resultText.isEmpty()) {
+                return TranslateError(500, "翻译结果为空")
+            }
+
+            TranslateSuccess(fromLang, toLang, text, resultText)
+        } catch (e: Throwable) {
             TranslateError(500, "网络或解析异常: ${e.message}")
         }
     }
