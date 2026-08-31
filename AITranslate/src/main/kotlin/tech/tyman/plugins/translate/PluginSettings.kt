@@ -42,7 +42,10 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         val fetchModelsButton = Button(ctx).apply {
             text = "获取模型列表"
             setOnClickListener {
-                val rawUrl = urlInput.editText.text.toString().trim().trimEnd('/')
+                var rawUrl = urlInput.editText.text.toString().trim()
+while (rawUrl.endsWith("/")) {
+    rawUrl = rawUrl.substring(0, rawUrl.length - 1)
+}
                 val apiKey = keyInput.editText.text.toString().trim()
 
                 if (apiKey.isEmpty()) {
@@ -90,7 +93,10 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         val testButton = Button(ctx).apply {
             text = "测试连接"
             setOnClickListener {
-                val rawUrl = urlInput.editText.text.toString().trim().trimEnd('/')
+                var rawUrl = urlInput.editText.text.toString().trim()
+while (rawUrl.endsWith("/")) {
+    rawUrl = rawUrl.substring(0, rawUrl.length - 1)
+}
                 val apiKey = keyInput.editText.text.toString().trim()
                 val model = modelInput.editText.text.toString().trim()
 
